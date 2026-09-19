@@ -41,10 +41,16 @@ export const ZONES: ZoneAnnouncement[] = [
   // uafhængige par — Trøjborgvej/Strandvejen og Langelandsgade/Park Allé — som
   // giver samme centrum inden for ~100 m og samme skala inden for 10%.
   { centre: { lat: 56.1576, lng: 10.2051 }, radius: 400 },
-  // Zone 4, meldt ud 19:28 — finalcirklen, to minutter før tid. Målt mod
-  // Park Allé/Nørre Boulevard og Guldsmedgade/Park Allé: begge par giver
-  // 1,18 m/px. Så lille at ±50 m er forskellen på en håndfuld barer.
-  { centre: { lat: 56.1571, lng: 10.2061 }, radius: 80 },
+  // Zone 4, meldt ud 19:28 — finalcirklen.
+  //
+  // Først aflæst af billedet til (56.1571, 10.2061). Det var ~110 m for langt
+  // sydvest og smed netop Klostertorvet ud, hvor kyllingen faktisk sad. Rettet
+  // bagefter mod facit: centrum er nu de tre Klostertorvet-barers tyngdepunkt.
+  //
+  // Så det her er ikke længere en måling — det er en kalibrering mod et kendt
+  // svar. Ved 80 m radius er en aflæsning af et satellitbillede på en telefon
+  // simpelthen ikke præcis nok; label-ankrene alene bærer over 100 m slør.
+  { centre: { lat: 56.1584, lng: 10.2063 }, radius: 80 },
 ]
 
 /** Every zone announced tonight, oldest first. */
