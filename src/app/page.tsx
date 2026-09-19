@@ -468,9 +468,9 @@ function DegradedBanner() {
       <TriangleAlertIcon className="mt-px size-4 shrink-0 text-amber-300" />
       <span>
         <span className="font-semibold">Ingen kontakt til de fælles data.</span>{" "}
-        Barer, åbningstider og zonen virker. Jeres kryds kan hverken hentes
-        eller gemmes lige nu — de er ikke væk, de kan bare ikke vises. Skriv
-        dem ned indtil videre.
+        Barer, åbningstider og zonen virker. Nye kryds kan ikke gemmes, og kun
+        dem der er meldt ind manuelt vises herunder — resten er ikke væk, de kan
+        bare ikke hentes. Sig til når I har været et sted.
       </span>
     </p>
   )
