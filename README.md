@@ -64,5 +64,5 @@ The shared contract between store, routes and UI is
 
 Next.js 15 (App Router) · TypeScript · Tailwind v4 · shadcn/ui
 
-`.npmrc` sets `minimumReleaseAge` so no package published in the last three
-days gets installed.
+`.npmrc` sets `min-release-age=3` (days) so no package published in the last
+three days gets installed.
