@@ -21,6 +21,10 @@ export type OpenWindow = { start: Date; end: Date }
 
 export type OpenState = {
   isOpen: boolean
+  /** Open, but closing within CLOSING_SOON_MINUTES. */
+  isClosingSoon: boolean
+  /** Whole minutes until `closesAt`. null when closed. */
+  minutesUntilClosing: number | null
   /** End of the window we are currently inside. null when closed. */
   closesAt: Date | null
   /** Next time it opens, at or after `now`. null if never within a week. */
@@ -167,12 +171,40 @@ export function nextOpeningAt(hours: HoursInput, date: Date): Date | null {
   return null
 }
 
+/**
+ * A bar closing within this many minutes is worth flagging. Once the evening is
+ * under way almost everything is open, so "open" stops carrying information and
+ * only the ones about to close do.
+ */
+export const CLOSING_SOON_MINUTES = 60
+
+/** Minutes until the current opening ends. null when closed at `date`. */
+export function minutesUntilClosing(
+  hours: HoursInput,
+  date: Date
+): number | null {
+  const end = closingAt(hours, date)
+  if (!end) return null
+  return Math.max(0, Math.round((end.getTime() - date.getTime()) / 60000))
+}
+
+/** Open, but not for much longer. False when closed. */
+export function isClosingSoon(hours: HoursInput, date: Date): boolean {
+  const minutes = minutesUntilClosing(hours, date)
+  return minutes !== null && minutes <= CLOSING_SOON_MINUTES
+}
+
 /** Everything the UI needs about one bar's status, in one pass. */
 export function getOpenState(hours: HoursInput, now: Date): OpenState {
   const current = currentWindow(hours, now)
   const opensAt = nextOpeningAt(hours, now)
+  const untilClosing = current
+    ? Math.max(0, Math.round((current.end.getTime() - now.getTime()) / 60000))
+    : null
   return {
     isOpen: current !== null,
+    isClosingSoon: untilClosing !== null && untilClosing <= CLOSING_SOON_MINUTES,
+    minutesUntilClosing: untilClosing,
     closesAt: current?.end ?? null,
     opensAt,
     minutesUntilOpen:

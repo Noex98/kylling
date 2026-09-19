@@ -30,7 +30,6 @@ const BarMap = dynamic(
 
 const FILTERS = [
   { id: "alle", label: "Alle" },
-  { id: "aabne", label: "Åbne nu" },
   { id: "mangler", label: "Mangler" },
   { id: "besoegt", label: "Besøgt" },
 ] as const
@@ -229,13 +228,11 @@ export default function Home() {
 
   const counts: Record<Filter, number> = {
     alle: searched.length,
-    aabne: searched.filter((r) => r.status.isOpen).length,
     mangler: searched.filter((r) => !r.visit).length,
     besoegt: searched.filter((r) => r.visit).length,
   }
 
   const shown = searched.filter((row) => {
-    if (filter === "aabne") return row.status.isOpen
     if (filter === "mangler") return !row.visit
     if (filter === "besoegt") return Boolean(row.visit)
     return true
@@ -310,7 +307,7 @@ export default function Home() {
                 </TabsTrigger>
               </TabsList>
 
-              <div className="grid grid-cols-4 gap-1.5">
+              <div className="grid grid-cols-3 gap-1.5">
                 {FILTERS.map((f) => (
                   <button
                     key={f.id}
@@ -386,7 +383,6 @@ export default function Home() {
 
 function emptyMessage(filter: Filter, query: string): string {
   if (query.trim()) return `Ingen barer matcher "${query.trim()}".`
-  if (filter === "aabne") return "Ingen barer er åbne lige nu."
   if (filter === "besoegt") return "I har ikke krydset nogen barer af endnu."
   if (filter === "mangler") return "Alle barer er besøgt. Godt gået! 🐔"
   return "Ingen barer endnu."

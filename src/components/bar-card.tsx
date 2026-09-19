@@ -3,6 +3,7 @@
 import * as React from "react"
 import { cn } from "cn"
 import {
+  AlarmClockIcon,
   CheckIcon,
   LoaderCircleIcon,
   MapPinIcon,
@@ -19,12 +20,10 @@ import {
   formatOpeningLine,
   formatTime,
   getOpenState,
+  type OpenState,
 } from "@/lib/hours"
 import { googleMapsDirectionsUrl, googleMapsUrl } from "@/lib/maps"
 import type { Bar, Visit } from "@/lib/types"
-
-/** Bars opening within this many minutes get the "åbner snart" treatment. */
-export const SOON_MINUTES = 120
 
 type BarCardProps = {
   bar: Bar
@@ -49,11 +48,11 @@ export function BarCard({
 }: BarCardProps) {
   const status = getOpenState(bar.hours, now)
   const visited = Boolean(visit)
-  const soon =
-    !status.isOpen &&
-    status.minutesUntilOpen !== null &&
-    status.minutesUntilOpen <= SOON_MINUTES
-  const nextOpening = status.opensToday ? null : formatNextOpening(bar.hours, now)
+  // Open: when it closes. Closed: when it opens again ("Åbner i morgen 20:00").
+  // null only for a bar that never opens again — then the badge says it all.
+  const hoursLine = status.isOpen
+    ? formatOpeningLine(bar.hours, now)
+    : formatNextOpening(bar.hours, now)
 
   return (
     <Card
@@ -89,25 +88,22 @@ export function BarCard({
           </a>
 
           <div className="flex flex-wrap items-center gap-x-2 gap-y-1 pt-0.5">
-            <StatusBadge open={status.isOpen} soon={soon} />
-            <span
-              className={cn(
-                "text-sm font-medium",
-                status.isOpen ? "text-emerald-400" : "text-muted-foreground"
-              )}
-            >
-              {formatOpeningLine(bar.hours, now)}
-            </span>
-            {soon && status.minutesUntilOpen !== null && (
-              <span className="text-sm text-amber-400">
-                {formatIn(status.minutesUntilOpen)}
+            <StatusBadge status={status} />
+            {hoursLine && (
+              <span
+                className={cn(
+                  "text-sm",
+                  // Open is the norm tonight, so it stays quiet; a closed bar's
+                  // next opening is the part worth reading.
+                  status.isOpen
+                    ? "text-muted-foreground"
+                    : "font-medium text-foreground/90"
+                )}
+              >
+                {hoursLine}
               </span>
             )}
           </div>
-
-          {nextOpening && (
-            <p className="text-sm text-muted-foreground">{nextOpening}</p>
-          )}
 
           {bar.note && (
             <p className="text-sm text-muted-foreground italic">{bar.note}</p>
@@ -165,26 +161,28 @@ export function BarCard({
   )
 }
 
-function StatusBadge({ open, soon }: { open: boolean; soon: boolean }) {
-  if (open) {
+/**
+ * Badges follow urgency, not state. Once the crawl is under way nearly every
+ * bar is open, so "open" says nothing and gets no badge — only the bars about
+ * to close (loud) and the ones already shut (quiet) are worth a glance.
+ */
+function StatusBadge({ status }: { status: OpenState }) {
+  if (status.isClosingSoon && status.minutesUntilClosing !== null) {
     return (
-      <Badge className="border-emerald-400/40 bg-emerald-400/15 text-emerald-300">
-        Åben nu
+      <Badge className="h-6 gap-1.5 border-amber-400/50 bg-amber-400/20 px-2.5 text-sm font-semibold text-amber-200">
+        <AlarmClockIcon />
+        Lukker {formatIn(status.minutesUntilClosing)}
       </Badge>
     )
   }
-  if (soon) {
+  if (!status.isOpen) {
     return (
-      <Badge className="border-amber-400/40 bg-amber-400/15 text-amber-300">
-        Åbner snart
+      <Badge variant="outline" className="text-muted-foreground">
+        Lukket
       </Badge>
     )
   }
-  return (
-    <Badge variant="outline" className="text-muted-foreground">
-      Lukket
-    </Badge>
-  )
+  return null
 }
 
 /** Deliberately huge — this gets tapped one-handed, in the dark, after a beer. */

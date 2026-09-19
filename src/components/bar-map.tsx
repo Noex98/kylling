@@ -21,7 +21,7 @@ import {
   type GeolocationTracker,
 } from "@/components/use-geolocation"
 import { coords } from "@/data/coords"
-import { formatOpeningLine, getOpenState } from "@/lib/hours"
+import { formatIn, formatOpeningLine, getOpenState } from "@/lib/hours"
 import {
   AARHUS_CENTRE,
   googleMapsDirectionsUrl,
@@ -52,12 +52,26 @@ type BarMapProps = {
 /** Zoomed so Aarhus C's bar streets fill a phone screen. */
 const DEFAULT_ZOOM = 15
 
-type MarkerKind = "open" | "visited" | "closed"
+type MarkerKind = "closingSoon" | "open" | "visited" | "closed"
 
 const MARKER_STYLE: Record<
   MarkerKind,
   { color: string; ring: string; glyph: string; size: number; label: string }
 > = {
+  /**
+   * The one that has to catch the eye: once the evening is under way nearly
+   * everything is open, so "open" says nothing and "about to close" says
+   * everything. Amber against the inverted-grey tiles, biggest of the four,
+   * and the only pin with a "!" — so it still reads on a dim phone screen and
+   * without relying on colour alone.
+   */
+  closingSoon: {
+    color: "#f59e0b",
+    ring: "rgba(255,255,255,0.95)",
+    glyph: "!",
+    size: 34,
+    label: "Lukker snart",
+  },
   open: {
     color: "#10b981",
     ring: "rgba(255,255,255,0.95)",
@@ -81,12 +95,12 @@ const MARKER_STYLE: Record<
   },
 }
 
-const LEGEND: MarkerKind[] = ["open", "visited", "closed"]
+const LEGEND: MarkerKind[] = ["closingSoon", "open", "visited", "closed"]
 
 /**
- * Leaflet's bundled marker images break under bundlers, and four colours are
- * the whole point here — so every marker is a `divIcon` we draw ourselves.
- * Cached: the poll re-renders this component every five seconds.
+ * Leaflet's bundled marker images break under bundlers, and the four bar
+ * colours are the whole point here — so every marker is a `divIcon` we draw
+ * ourselves. Cached: the poll re-renders this component every five seconds.
  */
 const iconCache = new Map<MarkerKind, DivIcon>()
 
@@ -106,16 +120,22 @@ function iconFor(kind: MarkerKind): DivIcon {
   return icon
 }
 
+/**
+ * Precedence, strongest first: a bar you have already ticked off is done, so it
+ * never shouts "lukker snart" at you; among the ones still missing, closing
+ * soon beats plain open.
+ */
 function kindOf(row: BarMapRow, now: Date): MarkerKind {
-  const open = getOpenState(row.bar.hours, now).isOpen
-  if (!open) return "closed"
-  return row.visit ? "visited" : "open"
+  const state = getOpenState(row.bar.hours, now)
+  if (!state.isOpen) return "closed"
+  if (row.visit) return "visited"
+  return state.isClosingSoon ? "closingSoon" : "open"
 }
 
 /**
- * The player is not a fourth bar, so it is not a fourth pin: a filled dot with
+ * The player is not a fifth bar, so it is not a fifth pin: a filled dot with
  * a halo, the convention every map app uses. Purple keeps it clear of the
- * green/blue/grey the bars already own.
+ * green/amber/blue/grey the bars already own.
  */
 const PLAYER_COLOR = "#a855f7"
 const PLAYER_SIZE = 30
@@ -408,18 +428,25 @@ export function BarMap({ rows, now, onToggle }: BarMapProps) {
             maxZoom={19}
           />
 
-          {placed.map(({ row, lat, lng }) => (
-            <Marker
-              key={row.bar.id}
-              position={[lat, lng]}
-              icon={iconFor(kindOf(row, now))}
-              title={row.bar.name}
-            >
-              <Popup>
-                <BarPopup row={row} now={now} onToggle={onToggle} />
-              </Popup>
-            </Marker>
-          ))}
+          {placed.map(({ row, lat, lng }) => {
+            const kind = kindOf(row, now)
+            return (
+              <Marker
+                key={row.bar.id}
+                position={[lat, lng]}
+                icon={iconFor(kind)}
+                // Aarhus C stacks bars on top of each other; the ones about to
+                // close must not end up buried under a neighbour. Still well
+                // under the player dot, which owns 1000.
+                zIndexOffset={kind === "closingSoon" ? 500 : 0}
+                title={row.bar.name}
+              >
+                <Popup>
+                  <BarPopup row={row} now={now} onToggle={onToggle} />
+                </Popup>
+              </Marker>
+            )
+          })}
 
           {geo.position && (
             <>
@@ -623,6 +650,12 @@ function BarPopup({
   const { bar, visit, pending } = row
   const visited = Boolean(visit)
   const status = getOpenState(bar.hours, now)
+  // The actionable half of "lukker snart": the clock time alone makes you do
+  // the arithmetic, so spell out how long you have left. "Lukker 02:00 · om 25 min".
+  const closingIn =
+    status.isClosingSoon && status.minutesUntilClosing !== null
+      ? formatIn(status.minutesUntilClosing)
+      : null
 
   return (
     <div className="w-[220px] space-y-2 p-3 font-sans">
@@ -632,12 +665,15 @@ function BarPopup({
         </p>
         <p
           className={
-            status.isOpen
-              ? "text-sm font-medium text-emerald-400"
-              : "text-sm text-muted-foreground"
+            closingIn
+              ? "text-sm font-semibold text-amber-400"
+              : status.isOpen
+                ? "text-sm font-medium text-emerald-400"
+                : "text-sm text-muted-foreground"
           }
         >
           {formatOpeningLine(bar.hours, now)}
+          {closingIn ? ` · ${closingIn}` : ""}
         </p>
       </div>
 
