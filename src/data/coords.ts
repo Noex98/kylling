@@ -97,7 +97,8 @@ export const coords: CoordsById = {
   "tir-na-nog": { lat: 56.155206, lng: 10.204958 }, // Tir Na Nóg
   "to-kolde": { lat: 56.154689, lng: 10.211358 }, // To Kolde
   "troejborgkroen": { lat: 56.169984, lng: 10.215654 }, // Trøjborgkroen
-  "two-socks-aarhus": { lat: 56.158343, lng: 10.206631 }, // Two Socks Aarhus
+  "two-socks-jaegergaardsgade": { lat: 56.148139, lng: 10.197094 }, // Two Socks Jægergårdsgade
+  "two-socks-aarhus": { lat: 56.158343, lng: 10.206631 }, // Two Socks Klostertorvet
   "toerst": { lat: 56.144268, lng: 10.20461 }, // Törst
   "under-masken": { lat: 56.15747, lng: 10.210128 }, // Under Masken
   "vin-og-petanque": { lat: 56.153867, lng: 10.208159 }, // Vin & Petanque

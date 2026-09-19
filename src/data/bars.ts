@@ -1311,19 +1311,37 @@ export const bars: Bar[] = [
       6: { open: "11:00", close: "22:00" },
     },
   },
+  // Two Socks har to barer i Aarhus. De ligger 700 m fra hinanden og hedder
+  // næsten det samme, så de står med gadenavn i navnet — ellers krydser nogen
+  // den forkerte af. Tiderne nedenfor er fra two-socks.com.
+  {
+    id: "two-socks-jaegergaardsgade",
+    name: "Two Socks Jægergårdsgade",
+    address: "Jægergårdsgade 3, 8000 Aarhus C",
+    note: "Den ene af Two Socks' to barer i Aarhus — den anden ligger på Klostertorvet. Rustik ginbar, der også er café om dagen: åbner kl. 8 torsdag og fredag. Søndag kun 9-14.",
+    hours: {
+      0: { open: "09:00", close: "14:00" },
+      1: { open: "16:00", close: "23:00" },
+      2: { open: "16:00", close: "23:00" },
+      3: { open: "16:00", close: "23:00" },
+      4: { open: "08:00", close: "00:00" },
+      5: { open: "08:00", close: "01:00" },
+      6: { open: "09:00", close: "01:00" },
+    },
+  },
   {
     id: "two-socks-aarhus",
-    name: "Two Socks Aarhus",
+    name: "Two Socks Klostertorvet",
     address: "Klostertorvet 4, 8000 Aarhus C",
-    note: "Ginbar med ca. 170 gin & tonics. Lukker tidligt (kl. 22-23). Søndag er ikke bekræftet — sandsynligvis lukket.",
+    note: "Den anden Two Socks i Aarhus — den på Jægergårdsgade er en anden bar. Ginbar med et stort udvalg af gin & tonic. Lukket om søndagen.",
     hours: {
       0: null,
-      1: { open: "10:00", close: "22:00" },
-      2: { open: "10:00", close: "22:00" },
-      3: { open: "10:00", close: "22:00" },
-      4: { open: "10:00", close: "22:00" },
-      5: { open: "10:00", close: "23:00" },
-      6: { open: "10:00", close: "23:00" },
+      1: { open: "16:00", close: "23:00" },
+      2: { open: "16:00", close: "23:00" },
+      3: { open: "16:00", close: "23:00" },
+      4: { open: "16:00", close: "00:00" },
+      5: { open: "14:00", close: "02:00" },
+      6: { open: "13:00", close: "02:00" },
     },
   },
   {
