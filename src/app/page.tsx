@@ -64,6 +64,8 @@ function useHeaderHeight(): [(node: HTMLElement | null) => void, number] {
   return [ref, height]
 }
 
+const TEAM_NAME = "De tørstige slagtere"
+
 /** How long the first-load cover takes to fade away. */
 const FADE_MS = 400
 
@@ -120,12 +122,17 @@ function FirstLoadOverlay({ resolved }: { resolved: boolean }) {
       style={{ transitionDuration: `${FADE_MS}ms` }}
     >
       <style>{LOADER_CSS}</style>
-      <span
-        aria-hidden
-        className="kylling-loader-emoji text-[clamp(5rem,30vw,10rem)] leading-none select-none"
-      >
-        🐔
-      </span>
+      <div className="flex flex-col items-center gap-6 px-6 text-center">
+        <span
+          aria-hidden
+          className="kylling-loader-emoji text-[clamp(5rem,30vw,10rem)] leading-none select-none"
+        >
+          🐔
+        </span>
+        <p className="font-heading text-lg font-bold tracking-tight text-balance">
+          {TEAM_NAME}
+        </p>
+      </div>
       <span className="sr-only">Henter barer…</span>
     </div>
   )
@@ -266,12 +273,16 @@ export default function Home() {
             className="sticky top-0 z-20 border-b bg-background/90 backdrop-blur-md"
           >
             <div className="mx-auto w-full max-w-lg space-y-3 px-3 py-3">
-              <div className="flex items-baseline justify-between gap-2">
-                <h1 className="font-heading text-xl font-bold tracking-tight">
-                  🐔 Kylling{" "}
-                  <span className="text-muted-foreground">Aarhus</span>
-                </h1>
-                <SyncIndicator />
+              <div className="flex items-start justify-between gap-2">
+                <div className="min-w-0">
+                  <h1 className="font-heading text-xl leading-tight font-bold tracking-tight">
+                    🐔 Kylling
+                  </h1>
+                  <p className="truncate text-xs text-muted-foreground">
+                    {TEAM_NAME}
+                  </p>
+                </div>
+                <SyncIndicator className="mt-1" />
               </div>
 
               <Progress visited={visited} total={total} />

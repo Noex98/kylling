@@ -16,7 +16,7 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Kylling 🐔 Aarhus",
+  title: "Kylling 🐔 De tørstige slagtere",
   description:
     "Find kyllingerne i Aarhus' barer — kryds af, se hvem der har været hvor, og hvilke barer der har åbent.",
 };
