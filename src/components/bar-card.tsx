@@ -1,0 +1,193 @@
+"use client"
+
+import * as React from "react"
+import { cn } from "cn"
+import { CheckIcon, MapPinIcon, Trash2Icon } from "lucide-react"
+
+import { Badge } from "@/components/ui/badge"
+import { Button } from "@/components/ui/button"
+import { Card } from "@/components/ui/card"
+import {
+  formatIn,
+  formatNextOpening,
+  formatOpeningLine,
+  formatTime,
+  getOpenState,
+} from "@/lib/hours"
+import type { Bar, Visit } from "@/lib/types"
+
+/** Bars opening within this many minutes get the "åbner snart" treatment. */
+export const SOON_MINUTES = 120
+
+type BarCardProps = {
+  bar: Bar
+  visit?: Visit
+  now: Date
+  onToggle: (visited: boolean) => void
+  onChicken: () => void
+  onDelete?: () => void
+}
+
+export function BarCard({
+  bar,
+  visit,
+  now,
+  onToggle,
+  onChicken,
+  onDelete,
+}: BarCardProps) {
+  const status = getOpenState(bar.hours, now)
+  const visited = Boolean(visit)
+  const soon =
+    !status.isOpen &&
+    status.minutesUntilOpen !== null &&
+    status.minutesUntilOpen <= SOON_MINUTES
+  const nextOpening = status.opensToday ? null : formatNextOpening(bar.hours, now)
+
+  return (
+    <Card
+      size="sm"
+      className={cn(
+        "gap-2 transition-opacity",
+        visited && "bg-card/50 opacity-70"
+      )}
+    >
+      <div className="flex items-start gap-3 px-(--card-spacing)">
+        <div className="min-w-0 flex-1 space-y-1">
+          <h2
+            className={cn(
+              "font-heading text-lg leading-tight font-semibold break-words",
+              visited && "text-muted-foreground line-through"
+            )}
+          >
+            {bar.name}
+          </h2>
+
+          {bar.address && (
+            <p className="flex items-start gap-1 text-sm text-muted-foreground">
+              <MapPinIcon className="mt-0.5 size-3.5 shrink-0" />
+              <span className="break-words">{bar.address}</span>
+            </p>
+          )}
+
+          <div className="flex flex-wrap items-center gap-x-2 gap-y-1 pt-0.5">
+            <StatusBadge open={status.isOpen} soon={soon} />
+            <span
+              className={cn(
+                "text-sm font-medium",
+                status.isOpen ? "text-emerald-400" : "text-muted-foreground"
+              )}
+            >
+              {formatOpeningLine(bar.hours, now)}
+            </span>
+            {soon && status.minutesUntilOpen !== null && (
+              <span className="text-sm text-amber-400">
+                {formatIn(status.minutesUntilOpen)}
+              </span>
+            )}
+          </div>
+
+          {nextOpening && (
+            <p className="text-sm text-muted-foreground">{nextOpening}</p>
+          )}
+
+          {bar.note && (
+            <p className="text-sm text-muted-foreground italic">{bar.note}</p>
+          )}
+        </div>
+
+        <TickButton
+          visited={visited}
+          label={bar.name}
+          onClick={() => onToggle(!visited)}
+        />
+      </div>
+
+      <div className="flex flex-wrap items-center gap-2 px-(--card-spacing)">
+        <Button
+          variant="outline"
+          size="lg"
+          onClick={onChicken}
+          aria-pressed={Boolean(visit?.chickenFound)}
+          className={cn(
+            "h-10 text-sm",
+            visit?.chickenFound &&
+              "border-amber-400/60 bg-amber-400/15 text-amber-300 hover:bg-amber-400/25"
+          )}
+        >
+          🐔 {visit?.chickenFound ? "Kylling fundet her!" : "Kylling her?"}
+        </Button>
+
+        {visit && (
+          <span className="text-xs text-muted-foreground">
+            Krydset {visit.by ? `af ${visit.by} ` : ""}kl.{" "}
+            {formatTime(new Date(visit.at))}
+          </span>
+        )}
+
+        {bar.custom && onDelete && (
+          <Button
+            variant="ghost"
+            size="icon-lg"
+            aria-label={`Slet ${bar.name}`}
+            className="ml-auto text-muted-foreground hover:text-destructive"
+            onClick={onDelete}
+          >
+            <Trash2Icon />
+          </Button>
+        )}
+      </div>
+    </Card>
+  )
+}
+
+function StatusBadge({ open, soon }: { open: boolean; soon: boolean }) {
+  if (open) {
+    return (
+      <Badge className="border-emerald-400/40 bg-emerald-400/15 text-emerald-300">
+        Åben nu
+      </Badge>
+    )
+  }
+  if (soon) {
+    return (
+      <Badge className="border-amber-400/40 bg-amber-400/15 text-amber-300">
+        Åbner snart
+      </Badge>
+    )
+  }
+  return (
+    <Badge variant="outline" className="text-muted-foreground">
+      Lukket
+    </Badge>
+  )
+}
+
+/** Deliberately huge — this gets tapped one-handed, in the dark, after a beer. */
+function TickButton({
+  visited,
+  label,
+  onClick,
+}: {
+  visited: boolean
+  label: string
+  onClick: () => void
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      aria-pressed={visited}
+      aria-label={visited ? `Fortryd besøg på ${label}` : `Kryds ${label} af`}
+      className={cn(
+        "flex size-16 shrink-0 items-center justify-center rounded-2xl border-2 transition-colors outline-none select-none",
+        "focus-visible:ring-3 focus-visible:ring-ring/50 active:translate-y-px",
+        visited
+          ? "border-emerald-400 bg-emerald-500 text-white"
+          : "border-border bg-muted/40 text-muted-foreground hover:bg-muted"
+      )}
+    >
+      <CheckIcon className="size-8" strokeWidth={3} />
+    </button>
+  )
+}
