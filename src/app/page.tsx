@@ -276,7 +276,7 @@ export default function Home() {
               <div className="flex items-start justify-between gap-2">
                 <div className="min-w-0">
                   <h1 className="font-heading text-xl leading-tight font-bold tracking-tight">
-                    🐔 Kylling
+                    Kylling 🐔
                   </h1>
                   <p className="truncate text-xs text-muted-foreground">
                     {TEAM_NAME}
