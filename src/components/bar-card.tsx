@@ -36,6 +36,8 @@ type BarCardProps = {
   pending?: boolean
   /** This bar is being deleted. */
   deleting?: boolean
+  /** The shared state is unreachable, so nothing may be written. */
+  frozen?: boolean
   onToggle: (visited: boolean) => void
   onDelete?: () => void
 }
@@ -47,6 +49,7 @@ export function BarCard({
   now,
   pending = false,
   deleting = false,
+  frozen = false,
   onToggle,
   onDelete,
 }: BarCardProps) {
@@ -144,6 +147,7 @@ export function BarCard({
         <TickButton
           visited={visited}
           pending={pending}
+          frozen={frozen}
           label={bar.name}
           onClick={() => onToggle(!visited)}
         />
@@ -215,11 +219,13 @@ function StatusBadge({ status }: { status: OpenState }) {
 function TickButton({
   visited,
   pending,
+  frozen,
   label,
   onClick,
 }: {
   visited: boolean
   pending: boolean
+  frozen: boolean
   label: string
   onClick: () => void
 }) {
@@ -230,18 +236,20 @@ function TickButton({
       // makes a repeat tap actually do nothing. The hook refuses it a second
       // time against the mutation cache, so nothing is ever queued up.
       onClick={() => {
-        if (pending) return
+        if (pending || frozen) return
         onClick()
       }}
-      disabled={pending}
+      disabled={pending || frozen}
       aria-pressed={visited}
       aria-busy={pending}
       aria-label={
-        pending
-          ? `Gemmer ${label}…`
-          : visited
-            ? `Fortryd besøg på ${label}`
-            : `Kryds ${label} af`
+        frozen
+          ? `Kan ikke krydse ${label} af — ingen kontakt til de fælles data`
+          : pending
+            ? `Gemmer ${label}…`
+            : visited
+              ? `Fortryd besøg på ${label}`
+              : `Kryds ${label} af`
       }
       className={cn(
         "flex size-16 shrink-0 items-center justify-center rounded-2xl border-2 transition-colors outline-none select-none",
@@ -249,6 +257,9 @@ function TickButton({
         visited
           ? "border-emerald-400 bg-emerald-500 text-white"
           : "border-border bg-muted/40 text-muted-foreground not-disabled:hover:bg-muted",
+        // Nothing can be written at all, so it reads as switched off rather
+        // than as busy — there is nothing to wait for.
+        frozen && "opacity-40",
         // Waiting on the server, so it must neither look nor be tappable.
         pending && "cursor-progress border-dashed opacity-60"
       )}

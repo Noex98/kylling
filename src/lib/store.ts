@@ -145,6 +145,27 @@ export async function getState(): Promise<GameState> {
 }
 
 /**
+ * The state for *display only*, or null when it cannot be read.
+ *
+ * Deliberately separate from `read()` rather than a flag on it. `updateState`
+ * must keep failing loudly when the store is unreachable: if a write started
+ * from an empty state because the read quietly gave up, it would persist that
+ * emptiness and wipe every tick the group has made. Only the GET path is
+ * allowed to carry on without the truth, and it says so in the response.
+ */
+export async function getStateForDisplay(): Promise<GameState | null> {
+  try {
+    return await read();
+  } catch (err) {
+    if (err instanceof StoreUnavailableError) {
+      console.error("[store] serving degraded state:", err.message);
+      return null;
+    }
+    throw err;
+  }
+}
+
+/**
  * Applies `fn` to a copy of the current state, bumps `rev`, stamps `updatedAt`,
  * persists and returns the new state. `fn` may mutate its argument or return a
  * replacement state.

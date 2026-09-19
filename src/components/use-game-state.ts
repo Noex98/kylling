@@ -18,6 +18,16 @@ import type {
 
 /** How often every phone re-reads the shared state. */
 const POLL_MS = 5_000
+
+/**
+ * How often to poll once the server says it cannot reach the store.
+ *
+ * Ten phones asking every five seconds is what a healthy game looks like and
+ * what a struggling store least needs, so back a long way off: nothing is
+ * changing anyway while nobody can write, and if the store is rate limited or
+ * over a quota then hammering it is the one thing that keeps it there.
+ */
+const DEGRADED_POLL_MS = 30_000
 /** How often the clock is nudged forward so open/closed badges stay honest. */
 const TICK_MS = 15_000
 
@@ -190,7 +200,8 @@ export function useGameState() {
     // when `refetchIntervalInBackground` is set or `focusManager.isFocused()`,
     // which is `document.visibilityState !== "hidden"`. So polling pauses on a
     // hidden tab, as it did before.
-    refetchInterval: POLL_MS,
+    refetchInterval: (query) =>
+      query.state.data?.degraded ? DEGRADED_POLL_MS : POLL_MS,
     refetchIntervalInBackground: false,
     refetchOnWindowFocus: true,
     refetchOnReconnect: true,
@@ -203,6 +214,14 @@ export function useGameState() {
 
   const state = query.data ?? null
   const now = useServerClock(state?.serverNow)
+
+  /**
+   * The server is serving a placeholder rather than the shared state. Every
+   * write is refused while this holds — not because it would fail (it would),
+   * but because the one that *didn't* would save an empty state over the
+   * group's ticks.
+   */
+  const degraded = state?.degraded === true
 
   const toggle = useMutation({
     mutationKey: VISIT_KEY,
@@ -283,6 +302,7 @@ export function useGameState() {
    * waiting is dropped on the floor, not queued behind the one in flight.
    */
   const toggleVisit = async (barId: string, visited: boolean): Promise<void> => {
+    if (degraded) return
     if (pendingForBar(client, VISIT_KEY, barId)) return
     try {
       await toggle.mutateAsync({ barId, visited })
@@ -292,6 +312,7 @@ export function useGameState() {
   }
 
   const deleteBar = async (barId: string): Promise<void> => {
+    if (degraded) return
     if (pendingForBar(client, DELETE_KEY, barId)) return
     try {
       await remove.mutateAsync(barId)
@@ -302,6 +323,7 @@ export function useGameState() {
 
   /** Resolves false when the server refused — the dialog stays open on false. */
   const addBar = async (bar: AddBarRequest) => {
+    if (degraded) return false
     if (add.isPending) return false
     try {
       await add.mutateAsync(bar)
@@ -322,6 +344,8 @@ export function useGameState() {
     loading: query.isPending,
     /** Everything the UI needs is present. */
     ready: state !== null && now !== null,
+    /** The shared state is unreachable: the list works, the ticks do not. */
+    degraded,
     refresh: query.refetch,
     toggleVisit,
     addBar,

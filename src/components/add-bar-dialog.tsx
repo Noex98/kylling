@@ -21,10 +21,16 @@ import type { AddBarRequest, Weekday } from "@/lib/types"
 
 type AddBarDialogProps = {
   now: Date
+  /**
+   * Nothing can be written. The trigger is disabled rather than the form
+   * refusing on submit — filling in a whole bar and having the dialog sit there
+   * saying nothing is worse than not being let in.
+   */
+  frozen?: boolean
   onAdd: (bar: AddBarRequest) => Promise<boolean>
 }
 
-export function AddBarDialog({ now, onAdd }: AddBarDialogProps) {
+export function AddBarDialog({ now, frozen = false, onAdd }: AddBarDialogProps) {
   const today = now.getDay() as Weekday
 
   const [open, setOpen] = React.useState(false)
@@ -87,6 +93,12 @@ export function AddBarDialog({ now, onAdd }: AddBarDialogProps) {
         <Button
           variant="outline"
           size="lg"
+          disabled={frozen}
+          aria-label={
+            frozen
+              ? "Kan ikke tilføje en bar — ingen kontakt til de fælles data"
+              : undefined
+          }
           className="h-12 w-full border-dashed text-base"
         >
           <PlusIcon /> Tilføj bar

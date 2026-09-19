@@ -63,6 +63,16 @@ export type StateResponse = {
   updatedAt: string;
   /** Server time, so clients agree on "is it open now" regardless of device clock. */
   serverNow: string;
+  /**
+   * The shared state could not be read, so `visits` is empty and is NOT the
+   * truth — it is a placeholder. The bar list, opening hours, the zone and the
+   * map all come from code and are still correct, so the app stays usable for
+   * everything except the one thing it cannot do: agree with the other phones.
+   *
+   * Clients must refuse to write while this is set. A write would start from
+   * this empty state and overwrite everything the group has already ticked.
+   */
+  degraded?: boolean;
 };
 
 /** POST /api/visits */

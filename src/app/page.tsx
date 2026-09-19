@@ -3,7 +3,7 @@
 import * as React from "react"
 import dynamic from "next/dynamic"
 import { cn } from "cn"
-import { ListIcon, MapIcon } from "lucide-react"
+import { ListIcon, MapIcon, TriangleAlertIcon } from "lucide-react"
 
 import { AddBarDialog } from "@/components/add-bar-dialog"
 import { BarCard } from "@/components/bar-card"
@@ -255,6 +255,7 @@ export default function Home() {
     deleteBar,
     togglingBars,
     deletingBars,
+    degraded,
   } = useGameState()
   const [filter, setFilter] = React.useState<Filter>("mangler")
   const [query, setQuery] = React.useState("")
@@ -346,6 +347,8 @@ export default function Home() {
                 <SyncIndicator className="mt-1" />
               </div>
 
+              {degraded && <DegradedBanner />}
+
               <Progress visited={done} total={total} />
 
               <BarSearchField
@@ -407,6 +410,7 @@ export default function Home() {
                   now={now}
                   pending={pending}
                   deleting={deletingBars.has(bar.id)}
+                  frozen={degraded}
                   onToggle={(next) => handleToggle(bar, next)}
                   onDelete={bar.custom ? () => handleDelete(bar) : undefined}
                 />
@@ -414,7 +418,7 @@ export default function Home() {
 
               {shown.length === 0 && <EmptyState filter={filter} query={query} />}
 
-              <AddBarDialog now={now} onAdd={addBar} />
+              <AddBarDialog now={now} frozen={degraded} onAdd={addBar} />
             </main>
           </TabsContent>
 
@@ -449,9 +453,31 @@ export default function Home() {
 }
 
 /**
- * The status line under the toggle. It is the only place the zone is spelled
- * out in the list view, so it says where the game is rather than only what is
- * hidden: what closes the circle next, and when.
+ * Says the one thing that matters when the shared state is unreachable: the
+ * ticks are *missing*, not lost. Without this the list reads as "nobody has
+ * been anywhere", and the first thing anyone would do is tick their bars all
+ * over again — which is exactly what must not happen.
+ */
+function DegradedBanner() {
+  return (
+    <p
+      role="status"
+      className="flex items-start gap-2 rounded-xl border border-amber-400/40 bg-amber-400/10 px-3 py-2 text-xs leading-snug text-amber-100"
+    >
+      <TriangleAlertIcon className="mt-px size-4 shrink-0 text-amber-300" />
+      <span>
+        <span className="font-semibold">Ingen kontakt til de fælles data.</span>{" "}
+        Barer, åbningstider og zonen virker. Jeres kryds kan hverken hentes
+        eller gemmes lige nu — de er ikke væk, de kan bare ikke vises. Skriv
+        dem ned indtil videre.
+      </span>
+    </p>
+  )
+}
+
+/**
+ * Every empty screen gets a face and a second line: the first says what
+ * happened, the second is what a teammate would have said out loud.
  */
 function emptyMessage(
   filter: Filter,
