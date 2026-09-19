@@ -32,6 +32,12 @@ export const clues: Clue[] = [
     barIds: ["sherlock-holmes-pub"],
     note: "Udelukket af en ledetråd",
   },
+  {
+    // Kaspers hint kl. 19:04: "Barer vi IKKE er på". Hintet nævnte en femte,
+    // som gruppen selv skal gætte — den er med vilje ikke her.
+    barIds: ["guldhornene", "mundhaeld", "svinbar", "lucys", "fairbar"],
+    note: "Kyllingen er ikke her (hint 19:04)",
+  },
 ]
 
 /** The clue that ruled this bar out, or undefined if none has. */
