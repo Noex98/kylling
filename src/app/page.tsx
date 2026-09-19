@@ -330,7 +330,7 @@ export default function Home() {
           </header>
 
           <TabsContent value="liste" asChild>
-            <main className="mx-auto w-full max-w-lg space-y-2.5 px-3 py-3 pb-16 text-base">
+            <main className="mx-auto w-full max-w-lg space-y-2 px-3 py-3 pb-16 text-base">
               {shown.map(({ bar, visit, pending }) => (
                 <BarCard
                   key={bar.id}

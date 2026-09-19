@@ -58,12 +58,15 @@ export function BarCard({
     <Card
       size="sm"
       className={cn(
-        "gap-2 transition-opacity",
+        // 105 bars in one scroll: the card is sized to its content, not to a
+        // comfortable-looking grid. Padding and gaps are as small as the
+        // content tolerates — the tap targets inside are not.
+        "gap-1.5 py-2.5 transition-opacity",
         visited && "bg-card/50 opacity-70"
       )}
     >
-      <div className="flex items-start gap-3 px-(--card-spacing)">
-        <div className="min-w-0 flex-1 space-y-1">
+      <div className="flex items-start gap-2.5 px-(--card-spacing)">
+        <div className="min-w-0 flex-1 space-y-0.5">
           <h2
             className={cn(
               "font-heading text-lg leading-tight font-semibold break-words",
@@ -73,40 +76,53 @@ export function BarCard({
             {bar.name}
           </h2>
 
-          {/* The address is the tap target — it opens Google Maps in a new tab. */}
-          <a
-            href={googleMapsUrl(bar)}
-            target="_blank"
-            rel="noopener noreferrer"
-            aria-label={`Åbn ${bar.name} i Google Maps`}
-            className="-mx-1.5 flex min-h-9 items-start gap-1.5 rounded-lg px-1.5 py-1.5 text-sm text-muted-foreground underline-offset-4 transition-colors hover:text-foreground focus-visible:ring-3 focus-visible:ring-ring/50 focus-visible:outline-none active:bg-muted/50"
-          >
-            <MapPinIcon className="mt-0.5 size-4 shrink-0" />
-            <span className="break-words underline decoration-dotted">
-              {bar.address ?? "Vis på Google Maps"}
-            </span>
-          </a>
+          {/* Address left, status right, one line. They only wrap apart when
+              the address genuinely needs the width. */}
+          <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5">
+            {/* The address is the tap target — it opens Google Maps in a new tab. */}
+            <a
+              href={googleMapsUrl(bar)}
+              target="_blank"
+              rel="noopener noreferrer"
+              aria-label={`Åbn ${bar.name} i Google Maps`}
+              className="-mx-1.5 flex min-h-9 min-w-0 flex-1 items-center gap-1.5 rounded-lg px-1.5 py-1 text-sm text-muted-foreground underline-offset-4 transition-colors hover:text-foreground focus-visible:ring-3 focus-visible:ring-ring/50 focus-visible:outline-none active:bg-muted/50"
+            >
+              <MapPinIcon className="size-4 shrink-0" />
+              <span className="truncate underline decoration-dotted">
+                {bar.address ?? "Vis på Google Maps"}
+              </span>
+            </a>
 
-          <div className="flex flex-wrap items-center gap-x-2 gap-y-1 pt-0.5">
-            <StatusBadge status={status} />
-            {hoursLine && (
-              <span
-                className={cn(
-                  "text-sm",
-                  // Open is the norm tonight, so it stays quiet; a closed bar's
-                  // next opening is the part worth reading.
-                  status.isOpen
-                    ? "text-muted-foreground"
-                    : "font-medium text-foreground/90"
+            {(hoursLine || !status.isOpen) && (
+              <span className="flex shrink-0 items-center gap-2">
+                <StatusBadge status={status} />
+                {hoursLine && (
+                  <span
+                    className={cn(
+                      "text-sm",
+                      // Open is the norm tonight, so it stays quiet; a closed
+                      // bar's next opening is the part worth reading.
+                      status.isOpen
+                        ? "text-muted-foreground"
+                        : "font-medium text-foreground/90"
+                    )}
+                  >
+                    {hoursLine}
+                  </span>
                 )}
-              >
-                {hoursLine}
               </span>
             )}
           </div>
 
+          {/* Notes run long and are colour, not navigation — two lines at most,
+              and never louder than the name or the hours. */}
           {bar.note && (
-            <p className="text-sm text-muted-foreground italic">{bar.note}</p>
+            <p
+              title={bar.note}
+              className="line-clamp-2 text-xs leading-snug text-muted-foreground/80 italic"
+            >
+              {bar.note}
+            </p>
           )}
         </div>
 
