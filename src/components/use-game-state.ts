@@ -102,6 +102,32 @@ function settle(client: QueryClient) {
   }
 }
 
+/**
+ * Is a write for this exact bar already on its way to the server?
+ *
+ * Asked of the mutation cache rather than of rendered state, so two taps inside
+ * a single frame are caught as well — React has not re-rendered in between, so
+ * the disabled attribute cannot have been applied yet.
+ */
+function pendingForBar(
+  client: QueryClient,
+  mutationKey: readonly unknown[],
+  barId: string
+): boolean {
+  return (
+    client.isMutating({
+      mutationKey,
+      predicate: (mutation) => {
+        const vars = mutation.state.variables
+        // Visit writes carry `{ barId }`; deletes carry the id itself.
+        const id =
+          typeof vars === "string" ? vars : (vars as ToggleVisitRequest)?.barId
+        return id === barId
+      },
+    }) > 0
+  )
+}
+
 // ---------------------------------------------------------------------------
 // Server clock
 // ---------------------------------------------------------------------------
@@ -236,33 +262,47 @@ export function useGameState() {
   const deletingBars = React.useMemo(() => new Set(deleting), [deleting])
 
   /**
-   * Is this exact bar already waiting on the server? Asked of the mutation
-   * cache rather than of the rendered `togglingBars`, so two taps inside one
-   * frame are caught too — the disabled attribute alone would not see them.
+   * Is this bar's tick waiting on the server? The rendered set answers for the
+   * UI; the mutation cache is asked as well so a second tap in the same frame
+   * is recognised before React has had a chance to disable anything.
    */
-  const isBusy = (key: readonly unknown[], barId: string) =>
-    client.isMutating({
-      mutationKey: key,
-      predicate: (mutation) => {
-        const vars = mutation.state.variables
-        const id = typeof vars === "string" ? vars : (vars as ToggleVisitRequest)?.barId
-        return id === barId
-      },
-    }) > 0
+  const isBarPending = React.useCallback(
+    (barId: string) =>
+      togglingBars.has(barId) || pendingForBar(client, VISIT_KEY, barId),
+    [client, togglingBars]
+  )
 
-  const toggleVisit = (barId: string, visited: boolean) => {
-    // Taps while the previous one is still in flight are dropped, not queued.
-    if (isBusy(VISIT_KEY, barId)) return
-    toggle.mutate({ barId, visited })
+  const isBarDeleting = React.useCallback(
+    (barId: string) =>
+      deletingBars.has(barId) || pendingForBar(client, DELETE_KEY, barId),
+    [client, deletingBars]
+  )
+
+  /**
+   * Resolves when the server has answered. A tap on a bar that is already
+   * waiting is dropped on the floor, not queued behind the one in flight.
+   */
+  const toggleVisit = async (barId: string, visited: boolean): Promise<void> => {
+    if (pendingForBar(client, VISIT_KEY, barId)) return
+    try {
+      await toggle.mutateAsync({ barId, visited })
+    } catch {
+      // Already reported by the mutation's onError toast.
+    }
   }
 
-  const deleteBar = (barId: string) => {
-    if (isBusy(DELETE_KEY, barId)) return
-    remove.mutate(barId)
+  const deleteBar = async (barId: string): Promise<void> => {
+    if (pendingForBar(client, DELETE_KEY, barId)) return
+    try {
+      await remove.mutateAsync(barId)
+    } catch {
+      // Already reported by the mutation's onError toast.
+    }
   }
 
   /** Resolves false when the server refused — the dialog stays open on false. */
   const addBar = async (bar: AddBarRequest) => {
+    if (add.isPending) return false
     try {
       await add.mutateAsync(bar)
       return true
@@ -286,6 +326,12 @@ export function useGameState() {
     toggleVisit,
     addBar,
     deleteBar,
+    /** Is this bar's tick waiting on the server? */
+    isBarPending,
+    /** Is this bar's deletion waiting on the server? */
+    isBarDeleting,
+    /** A new bar is on its way to the server. */
+    addingBar: add.isPending,
     /** Bar ids whose tick is waiting on the server. */
     togglingBars,
     /** Bar ids being deleted. */

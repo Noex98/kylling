@@ -73,7 +73,16 @@ export function AddBarDialog({ now, onAdd }: AddBarDialogProps) {
   }
 
   return (
-    <Dialog open={open} onOpenChange={setOpen}>
+    <Dialog
+      open={open}
+      // Escape, the X and a click outside all come through here. While the
+      // server has the bar, none of them may close the dialog — it closes on
+      // success, and stays put with the form intact on failure.
+      onOpenChange={(next) => {
+        if (saving && !next) return
+        setOpen(next)
+      }}
+    >
       <DialogTrigger asChild>
         <Button
           variant="outline"
@@ -187,6 +196,7 @@ export function AddBarDialog({ now, onAdd }: AddBarDialogProps) {
               type="button"
               variant="outline"
               className="h-11"
+              disabled={saving}
               onClick={() => setOpen(false)}
             >
               Annullér

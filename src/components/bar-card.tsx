@@ -150,7 +150,12 @@ export function BarCard({
             aria-busy={deleting}
             disabled={deleting}
             className="ml-auto text-muted-foreground hover:text-destructive"
-            onClick={onDelete}
+            // Guarded rather than merely disabled: a second click that lands in
+            // the same frame as the first would still reach this handler.
+            onClick={() => {
+              if (deleting) return
+              onDelete()
+            }}
           >
             {deleting ? <LoaderCircleIcon className="animate-spin" /> : <Trash2Icon />}
           </Button>
@@ -197,7 +202,13 @@ function TickButton({
   return (
     <button
       type="button"
-      onClick={onClick}
+      // `disabled` is how this *looks* unavailable; the early return is what
+      // makes a repeat tap actually do nothing. The hook refuses it a second
+      // time against the mutation cache, so nothing is ever queued up.
+      onClick={() => {
+        if (pending) return
+        onClick()
+      }}
       disabled={pending}
       aria-pressed={visited}
       aria-busy={pending}
