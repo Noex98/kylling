@@ -21,18 +21,33 @@ Open http://localhost:3000.
 The app stores the whole game state in one place and picks the backend at
 runtime:
 
-| Condition                                                   | Backend                    |
-| ----------------------------------------------------------- | -------------------------- |
-| Default — no env vars                                        | JSON file at `data/state.json` |
-| `UPSTASH_REDIS_REST_URL` **and** `UPSTASH_REDIS_REST_TOKEN` set | Upstash Redis (key `kylling:state`) |
+| Condition                                                       | Backend                             |
+| --------------------------------------------------------------- | ----------------------------------- |
+| `BLOB_READ_WRITE_TOKEN` set                                      | Vercel Blob (`kylling/state.json`)  |
+| `UPSTASH_REDIS_REST_URL` **and** `UPSTASH_REDIS_REST_TOKEN` set  | Upstash Redis (key `kylling:state`) |
+| Neither — the default                                            | JSON file at `data/state.json`      |
 
 **The file backend does not work on serverless hosts.** Vercel, Netlify and
-Cloudflare give each instance its own ephemeral filesystem, so players would
-each get their own private copy of the state. Use Upstash there — on Vercel,
-add Upstash Redis from the Marketplace and both env vars are injected for you.
+Cloudflare give each instance a read-only, per-instance filesystem: reads
+succeed, every write fails, so the list loads but no tick ever saves. The app
+detects this and returns a 503 explaining it rather than a bare 500.
+
+On Vercel, pick either storage from the dashboard — Blob is one click and sets
+`BLOB_READ_WRITE_TOKEN` for you; Upstash Redis comes from the Marketplace and
+sets both `UPSTASH_*` vars. **Redeploy afterwards**, since env vars only apply
+to new deployments.
 
 On a single container or VM the file backend is fine. Mount `/data` on a
 persistent volume so a restart doesn't wipe the night's progress.
+
+### A caveat that applies to all three
+
+State is stored as one document, read-modify-written per request. The in-process
+mutex makes that safe within one server instance, but not across several. If two
+players on two different serverless instances tick a bar in the same instant,
+one tick can be lost. With a group of ten walking between bars that is unlikely,
+and a player simply ticks again. Making it airtight would mean per-bar atomic
+writes (Redis hash fields), which is a bigger change than tonight allows.
 
 See `.env.example`.
 

@@ -1,8 +1,13 @@
 // Server-side game state, shared by every visitor.
 //
-// Two interchangeable backends behind one async interface:
-//   - default: a JSON file at <cwd>/data/state.json (zero setup)
-//   - if UPSTASH_REDIS_REST_URL + UPSTASH_REDIS_REST_TOKEN are set: Upstash Redis
+// Three interchangeable backends behind one async interface, picked from env:
+//   - BLOB_READ_WRITE_TOKEN set            -> Vercel Blob   (one click on Vercel)
+//   - UPSTASH_REDIS_REST_* set             -> Upstash Redis
+//   - neither                              -> a JSON file at <cwd>/data/state.json
+//
+// The file backend is the zero-setup default and is right for local dev or a
+// single long-running container. It cannot work on a serverless host, whose
+// filesystem is read-only — see asStoreUnavailable below.
 //
 // All writes go through a single in-process promise chain, so concurrent
 // requests can never read-modify-write over each other.
@@ -82,14 +87,45 @@ const fileBackend: Backend = {
   },
 
   async write(state) {
-    await fs.mkdir(DATA_DIR, { recursive: true });
-    const tmp = `${STATE_FILE}.${process.pid}.${Date.now()}.tmp`;
-    await fs.writeFile(tmp, JSON.stringify(state, null, 2), "utf8");
-    await rename(tmp, STATE_FILE);
+    try {
+      await fs.mkdir(DATA_DIR, { recursive: true });
+      const tmp = `${STATE_FILE}.${process.pid}.${Date.now()}.tmp`;
+      await fs.writeFile(tmp, JSON.stringify(state, null, 2), "utf8");
+      await rename(tmp, STATE_FILE);
+    } catch (err) {
+      throw asStoreUnavailable(err);
+    }
     const stat = await fs.stat(STATE_FILE);
     cache = { state, mtimeMs: stat.mtimeMs, size: stat.size };
   },
 };
+
+/**
+ * Serverless hosts (Vercel, Netlify, Cloudflare) give each instance a read-only
+ * filesystem, so the file backend can read but never write — reads succeed and
+ * every tick fails. That used to surface as a bare 500, which says nothing.
+ * Turn it into an error the UI can actually show a player.
+ */
+function asStoreUnavailable(err: unknown): Error {
+  const code = (err as NodeJS.ErrnoException)?.code;
+  if (code !== "EROFS" && code !== "EACCES" && code !== "EPERM") {
+    return err as Error;
+  }
+  return new StoreUnavailableError(
+    "Serveren kan ikke gemme afkrydsninger: filsystemet er skrivebeskyttet. " +
+      "Appen skal have et delt lager — tilføj Vercel Blob (BLOB_READ_WRITE_TOKEN) " +
+      "eller Upstash Redis, og deploy igen. Se README.",
+  );
+}
+
+/** Thrown when the state cannot be persisted at all. Routes map it to a 503. */
+export class StoreUnavailableError extends Error {
+  readonly code = "STORE_UNAVAILABLE";
+  constructor(message: string) {
+    super(message);
+    this.name = "StoreUnavailableError";
+  }
+}
 
 // ---------------------------------------------------------------------------
 // Redis backend (imported lazily so the file backend needs no dependency)
@@ -119,10 +155,48 @@ const redisBackend: Backend = {
   },
 };
 
-const backend = (): Backend =>
-  process.env.UPSTASH_REDIS_REST_URL && process.env.UPSTASH_REDIS_REST_TOKEN
-    ? redisBackend
-    : fileBackend;
+// ---------------------------------------------------------------------------
+// Vercel Blob backend (also imported lazily)
+// ---------------------------------------------------------------------------
+
+const BLOB_PATH = "kylling/state.json";
+
+/**
+ * `put` with `allowOverwrite` keeps the state at one stable pathname, and
+ * `addRandomSuffix: false` means we can read it back by URL without listing.
+ * Reads bypass the CDN cache (`cache: "no-store"` + a cache-busting query), or
+ * players would poll a stale copy for minutes.
+ */
+const blobBackend: Backend = {
+  async read() {
+    const { list } = await import("@vercel/blob");
+    const { blobs } = await list({ prefix: BLOB_PATH, limit: 1 });
+    const blob = blobs.find((b) => b.pathname === BLOB_PATH);
+    if (!blob) return emptyState();
+    const res = await fetch(`${blob.url}?t=${Date.now()}`, { cache: "no-store" });
+    if (!res.ok) return emptyState();
+    return normalise(await res.text());
+  },
+
+  async write(state) {
+    const { put } = await import("@vercel/blob");
+    await put(BLOB_PATH, JSON.stringify(state), {
+      access: "public",
+      contentType: "application/json",
+      addRandomSuffix: false,
+      allowOverwrite: true,
+      cacheControlMaxAge: 0,
+    });
+  },
+};
+
+const backend = (): Backend => {
+  if (process.env.BLOB_READ_WRITE_TOKEN) return blobBackend;
+  if (process.env.UPSTASH_REDIS_REST_URL && process.env.UPSTASH_REDIS_REST_TOKEN) {
+    return redisBackend;
+  }
+  return fileBackend;
+};
 
 // ---------------------------------------------------------------------------
 // Public API

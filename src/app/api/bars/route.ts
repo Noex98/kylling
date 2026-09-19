@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { bars } from "@/data/bars";
+import { storeErrorResponse } from "@/lib/api-error";
 import { getState, toStateResponse, updateState } from "@/lib/store";
 import type {
   AddBarRequest,
@@ -81,23 +82,27 @@ export async function POST(request: Request) {
     );
   }
 
-  const state = await updateState((s) => {
-    const taken = new Set([...bars, ...s.customBars].map((bar) => bar.id));
-    const base = slugify(name);
-    let id = base;
-    for (let n = 2; taken.has(id); n++) id = `${base}-${n}`;
+  try {
+    const state = await updateState((s) => {
+      const taken = new Set([...bars, ...s.customBars].map((bar) => bar.id));
+      const base = slugify(name);
+      let id = base;
+      for (let n = 2; taken.has(id); n++) id = `${base}-${n}`;
 
-    s.customBars.push({
-      id,
-      name: name.trim(),
-      address: address?.trim() || undefined,
-      note: note?.trim() || undefined,
-      hours: openingHours,
-      custom: true,
+      s.customBars.push({
+        id,
+        name: name.trim(),
+        address: address?.trim() || undefined,
+        note: note?.trim() || undefined,
+        hours: openingHours,
+        custom: true,
+      });
     });
-  });
 
-  return NextResponse.json(toStateResponse(state));
+    return NextResponse.json(toStateResponse(state));
+  } catch (err) {
+    return storeErrorResponse(err);
+  }
 }
 
 export async function DELETE(request: Request) {
@@ -115,10 +120,14 @@ export async function DELETE(request: Request) {
     );
   }
 
-  const state = await updateState((s) => {
-    s.customBars = s.customBars.filter((bar) => bar.id !== id);
-    delete s.visits[id];
-  });
+  try {
+    const state = await updateState((s) => {
+      s.customBars = s.customBars.filter((bar) => bar.id !== id);
+      delete s.visits[id];
+    });
 
-  return NextResponse.json(toStateResponse(state));
+    return NextResponse.json(toStateResponse(state));
+  } catch (err) {
+    return storeErrorResponse(err);
+  }
 }

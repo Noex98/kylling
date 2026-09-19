@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { storeErrorResponse } from "@/lib/api-error";
 import { toStateResponse, updateState } from "@/lib/store";
 import type { ToggleVisitRequest } from "@/lib/types";
 
@@ -36,21 +37,25 @@ export async function POST(request: Request) {
   }
 
   const id = barId.trim();
-  const state = await updateState((s) => {
-    if (!visited) {
-      delete s.visits[id];
-      return;
-    }
-    // Re-ticking an already-visited bar (e.g. to flag the chicken) keeps the
-    // original timestamp and name rather than resetting them.
-    const existing = s.visits[id];
-    s.visits[id] = {
-      barId: id,
-      at: existing?.at ?? new Date().toISOString(),
-      by: by?.trim() || existing?.by,
-      chickenFound: chickenFound ?? existing?.chickenFound,
-    };
-  });
+  try {
+    const state = await updateState((s) => {
+      if (!visited) {
+        delete s.visits[id];
+        return;
+      }
+      // Re-ticking an already-visited bar (e.g. to flag the chicken) keeps the
+      // original timestamp and name rather than resetting them.
+      const existing = s.visits[id];
+      s.visits[id] = {
+        barId: id,
+        at: existing?.at ?? new Date().toISOString(),
+        by: by?.trim() || existing?.by,
+        chickenFound: chickenFound ?? existing?.chickenFound,
+      };
+    });
 
-  return NextResponse.json(toStateResponse(state));
+    return NextResponse.json(toStateResponse(state));
+  } catch (err) {
+    return storeErrorResponse(err);
+  }
 }
