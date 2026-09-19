@@ -1,36 +1,68 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Kylling 🐔 Aarhus
 
-## Getting Started
+Bar crawl app for the "find the chicken" game: friends dressed as chickens hide
+in bars around Aarhus, players walk from place to place having a drink at each
+one, ticking off where they've been.
 
-First, run the development server:
+State is server-side and shared, so everyone in the group sees the same list
+updating live on their own phone.
+
+## Run it
 
 ```bash
+npm install
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Open http://localhost:3000.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## State storage
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+The app stores the whole game state in one place and picks the backend at
+runtime:
 
-## Learn More
+| Condition                                                   | Backend                    |
+| ----------------------------------------------------------- | -------------------------- |
+| Default — no env vars                                        | JSON file at `data/state.json` |
+| `UPSTASH_REDIS_REST_URL` **and** `UPSTASH_REDIS_REST_TOKEN` set | Upstash Redis (key `kylling:state`) |
 
-To learn more about Next.js, take a look at the following resources:
+**The file backend does not work on serverless hosts.** Vercel, Netlify and
+Cloudflare give each instance its own ephemeral filesystem, so players would
+each get their own private copy of the state. Use Upstash there — on Vercel,
+add Upstash Redis from the Marketplace and both env vars are injected for you.
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+On a single container or VM the file backend is fine. Mount `/data` on a
+persistent volume so a restart doesn't wipe the night's progress.
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+See `.env.example`.
 
-## Deploy on Vercel
+## Bars
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+Seed bars live in [`src/data/bars.ts`](src/data/bars.ts) with per-weekday
+opening hours (intervals may cross midnight — `open: "20:00", close: "05:00"`
+means it's still open at 02:00). Opening hours are best-effort and worth
+double-checking before relying on them.
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+Bars can also be added from the UI at runtime; those are stored server-side as
+`customBars` and can be deleted again. Seed bars cannot be deleted.
+
+## API
+
+All routes are uncached and return the same `StateResponse` shape.
+
+| Route                    | Method   | Body / query              |
+| ------------------------ | -------- | ------------------------- |
+| `/api/state`             | `GET`    | —                         |
+| `/api/visits`            | `POST`   | `ToggleVisitRequest`      |
+| `/api/bars`              | `POST`   | `AddBarRequest`           |
+| `/api/bars?id=<id>`      | `DELETE` | custom bars only          |
+
+The shared contract between store, routes and UI is
+[`src/lib/types.ts`](src/lib/types.ts).
+
+## Stack
+
+Next.js 15 (App Router) · TypeScript · Tailwind v4 · shadcn/ui
+
+`.npmrc` sets `minimumReleaseAge` so no package published in the last three
+days gets installed.
