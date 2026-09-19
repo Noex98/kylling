@@ -37,7 +37,7 @@ const FILTERS = [
 
 type Filter = (typeof FILTERS)[number]["id"]
 
-type Row = { bar: Bar; visit?: Visit; status: OpenState }
+type Row = { bar: Bar; visit?: Visit; status: OpenState; pending: boolean }
 
 type Tab = "liste" | "kort"
 
@@ -181,8 +181,18 @@ function compareRows(a: Row, b: Row): number {
 }
 
 export default function Home() {
-  const { state, now, error, ready, refresh, toggleVisit, addBar, deleteBar } =
-    useGameState()
+  const {
+    state,
+    now,
+    error,
+    ready,
+    refresh,
+    toggleVisit,
+    addBar,
+    deleteBar,
+    togglingBars,
+    deletingBars,
+  } = useGameState()
   const [filter, setFilter] = React.useState<Filter>("alle")
   const [query, setQuery] = React.useState("")
   const [tab, setTab] = React.useState<Tab>("liste")
@@ -195,9 +205,10 @@ export default function Home() {
         bar,
         visit: state.visits[bar.id],
         status: getOpenState(bar.hours, now),
+        pending: togglingBars.has(bar.id),
       }))
       .sort(compareRows)
-  }, [state, now])
+  }, [state, now, togglingBars])
 
   // Progress is about the whole crawl, so it ignores the search.
   const total = rows.length
@@ -224,8 +235,9 @@ export default function Home() {
   })
 
   function handleToggle(bar: Bar, next: boolean) {
+    // The "krydset af" toast is fired by the mutation once the server has
+    // actually accepted it — nothing here is optimistic any more.
     toggleVisit(bar.id, next)
-    if (next) toast.success(`${bar.name} krydset af 🐔`)
   }
 
   function handleDelete(bar: Bar) {
@@ -316,12 +328,14 @@ export default function Home() {
                 </p>
               )}
 
-              {shown.map(({ bar, visit }) => (
+              {shown.map(({ bar, visit, pending }) => (
                 <BarCard
                   key={bar.id}
                   bar={bar}
                   visit={visit}
                   now={now}
+                  pending={pending}
+                  deleting={deletingBars.has(bar.id)}
                   onToggle={(next) => handleToggle(bar, next)}
                   onDelete={bar.custom ? () => handleDelete(bar) : undefined}
                 />

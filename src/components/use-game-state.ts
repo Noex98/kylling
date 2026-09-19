@@ -3,19 +3,17 @@
 import * as React from "react"
 import {
   useMutation,
+  useMutationState,
   useQuery,
   useQueryClient,
   type QueryClient,
 } from "@tanstack/react-query"
 import { toast } from "sonner"
 
-import { emptyOpeningHours } from "@/lib/hours"
 import type {
   AddBarRequest,
-  Bar,
   StateResponse,
   ToggleVisitRequest,
-  Visit,
 } from "@/lib/types"
 
 /** How often every phone re-reads the shared state. */
@@ -31,11 +29,9 @@ const STATE_KEY = ["state"] as const
  * `isMutating` call instead of hand-rolled counters.
  */
 const WRITE_KEY = ["state", "write"] as const
-
-/** Optimistically added bars carry a placeholder id until the server names them. */
-const TEMP_PREFIX = "kylling-temp:"
-
-const isTempId = (id: string) => id.startsWith(TEMP_PREFIX)
+const VISIT_KEY = [...WRITE_KEY, "visit"] as const
+const ADD_KEY = [...WRITE_KEY, "add"] as const
+const DELETE_KEY = [...WRITE_KEY, "delete"] as const
 
 // ---------------------------------------------------------------------------
 // Transport
@@ -68,48 +64,26 @@ const json = (body: unknown): RequestInit => ({
 // Cache rules
 // ---------------------------------------------------------------------------
 
-/** Writes still settling, not counting the caller's own (`self` = 1 inside a mutation callback). */
-function otherWrites(client: QueryClient, self: 0 | 1): number {
-  return Math.max(client.isMutating({ mutationKey: WRITE_KEY }) - self, 0)
-}
-
 /**
- * The single gate every server snapshot passes through before it may become
- * what the UI renders. Both failure modes it closes come from the same fact:
- * a write to Vercel Blob takes a few hundred ms, so several taps really are in
- * flight at once, and each of them answers with a *full* state.
+ * The one gate every server snapshot passes through before it becomes what the
+ * UI renders.
  *
- *  1. **Out of order.** A response that describes an older revision than the
- *     one we already know about is dropped outright — `rev` only ever grows.
- *  2. **Behind the user.** A snapshot can be newer than the cache yet still
- *     older than the taps already made. While other writes are settling, the
- *     optimistic state stays on screen; only the snapshot's `rev` is taken, so
- *     a straggler resolving afterwards is recognised as stale by rule 1 and
- *     cannot flip the UI back.
- *
- * The truth is restored by the invalidate in `settle`, which runs once every
- * write has landed — at which point rule 2 no longer applies.
+ * A write to Vercel Blob takes a few hundred ms and several can be in flight at
+ * once (different bars, or a poll overlapping a write), so responses really do
+ * land out of order. `rev` only ever grows, so a snapshot describing an older
+ * revision than the cache already holds is simply dropped.
  */
-function reconcile(
+function newest(
   current: StateResponse | undefined,
-  incoming: StateResponse,
-  pending: number
+  incoming: StateResponse
 ): StateResponse {
-  if (!current) return incoming
-  if (incoming.rev < current.rev) return current
-  if (pending > 0) {
-    return incoming.rev === current.rev
-      ? current
-      : // Keep the optimistic data, remember how far the server has got.
-        { ...current, rev: incoming.rev, serverNow: incoming.serverNow }
-  }
-  return incoming
+  return current && incoming.rev < current.rev ? current : incoming
 }
 
-/** Puts a server snapshot into the cache — via `reconcile`, always. */
-function commit(client: QueryClient, incoming: StateResponse, self: 0 | 1) {
+/** Puts a server snapshot into the cache — via `newest`, always. */
+function commit(client: QueryClient, incoming: StateResponse) {
   const current = client.getQueryData<StateResponse>(STATE_KEY)
-  const next = reconcile(current, incoming, otherWrites(client, self))
+  const next = newest(current, incoming)
   if (next !== current) client.setQueryData(STATE_KEY, next)
 }
 
@@ -119,46 +93,13 @@ function commit(client: QueryClient, incoming: StateResponse, self: 0 | 1) {
  *
  * Mutation callbacks run *before* the mutation leaves the pending set, so "only
  * me left" is a count of exactly 1. The refetch is deliberately not awaited:
- * awaiting it would keep this mutation pending while the response is read, and
- * `reconcile` would then treat its own refresh as something to hold back.
+ * that would keep this mutation pending for the whole round trip and hold up
+ * the controls that are disabled while it runs.
  */
 function settle(client: QueryClient) {
   if (client.isMutating({ mutationKey: WRITE_KEY }) === 1) {
     void client.invalidateQueries({ queryKey: STATE_KEY })
   }
-}
-
-// ---------------------------------------------------------------------------
-// Optimistic edits (pure)
-// ---------------------------------------------------------------------------
-
-function withVisit(
-  state: StateResponse,
-  barId: string,
-  visit: Visit | null
-): StateResponse {
-  const visits = { ...state.visits }
-  if (visit) visits[barId] = visit
-  else delete visits[barId]
-  return { ...state, visits }
-}
-
-function withBar(state: StateResponse, bar: Bar, index?: number): StateResponse {
-  if (state.bars.some((b) => b.id === bar.id)) return state
-  const bars = [...state.bars]
-  bars.splice(index ?? bars.length, 0, bar)
-  return { ...state, bars }
-}
-
-function withoutBar(state: StateResponse, barId: string): StateResponse {
-  const visits = { ...state.visits }
-  delete visits[barId]
-  return { ...state, bars: state.bars.filter((b) => b.id !== barId), visits }
-}
-
-/** Edits the cache in place, leaving `rev` alone — optimistic state is not a revision. */
-function edit(client: QueryClient, fn: (state: StateResponse) => StateResponse) {
-  client.setQueryData<StateResponse>(STATE_KEY, (s) => (s ? fn(s) : s))
 }
 
 // ---------------------------------------------------------------------------
@@ -185,18 +126,14 @@ function useServerClock(serverNow: string | undefined) {
   // Keep "now" moving between polls, without ever reading the clock at render.
   React.useEffect(() => {
     const tick = setInterval(
-      () => setNowMs((ms) => (ms === null ? null : Date.now() + offsetRef.current)),
+      () =>
+        setNowMs((ms) => (ms === null ? null : Date.now() + offsetRef.current)),
       TICK_MS
     )
     return () => clearInterval(tick)
   }, [])
 
-  const now = React.useMemo(
-    () => (nowMs === null ? null : new Date(nowMs)),
-    [nowMs]
-  )
-
-  return { now, offsetRef }
+  return React.useMemo(() => (nowMs === null ? null : new Date(nowMs)), [nowMs])
 }
 
 // ---------------------------------------------------------------------------
@@ -208,10 +145,9 @@ export type GameState = ReturnType<typeof useGameState>
 /**
  * The single entry point for the shared game state.
  *
- * One query holds `GET /api/state`; the three writes are mutations that paint
- * their change optimistically and reconcile whatever the server answers with
- * through `reconcile`. What the user sees is the optimistic state, and it never
- * flips back while requests settle.
+ * One query holds `GET /api/state`; the three writes are mutations. Nothing is
+ * applied optimistically — a control that is waiting on the server says so and
+ * is disabled, and the state only changes when the server answers.
  */
 export function useGameState() {
   const client = useQueryClient()
@@ -221,12 +157,8 @@ export function useGameState() {
     queryFn: async ({ signal }) => {
       const incoming = await request("/api/state", { signal })
       // The query writes its own result, so it returns through the gate
-      // instead of calling setQueryData.
-      return reconcile(
-        client.getQueryData<StateResponse>(STATE_KEY),
-        incoming,
-        otherWrites(client, 0)
-      )
+      // rather than calling setQueryData.
+      return newest(client.getQueryData<StateResponse>(STATE_KEY), incoming)
     },
     // Verified against query-core 5.103: the interval callback only fetches
     // when `refetchIntervalInBackground` is set or `focusManager.isFocused()`,
@@ -244,103 +176,88 @@ export function useGameState() {
   })
 
   const state = query.data ?? null
-  const { now, offsetRef } = useServerClock(state?.serverNow)
+  const now = useServerClock(state?.serverNow)
 
   const toggle = useMutation({
-    mutationKey: [...WRITE_KEY, "visit"],
+    mutationKey: VISIT_KEY,
     mutationFn: (vars: ToggleVisitRequest) =>
       request("/api/visits", json(vars satisfies ToggleVisitRequest)),
-    onMutate: async ({ barId, visited }) => {
-      // This is what stops an in-flight poll from landing on top of the write.
-      await client.cancelQueries({ queryKey: STATE_KEY })
-      const previous = client.getQueryData<StateResponse>(STATE_KEY)?.visits[
-        barId
-      ]
-      const next: Visit | null = visited
-        ? { barId, at: new Date(Date.now() + offsetRef.current).toISOString() }
-        : null
-      edit(client, (s) => withVisit(s, barId, next))
-      return { previous }
+    // Stops a poll that is already in flight from coming back with a snapshot
+    // taken before this write and costing a needless render.
+    onMutate: () => client.cancelQueries({ queryKey: STATE_KEY }),
+    onSuccess: (data, { barId, visited }) => {
+      commit(client, data)
+      if (!visited) return
+      const name = data.bars.find((bar) => bar.id === barId)?.name
+      if (name) toast.success(`${name} krydset af 🐔`)
     },
-    onError: (error, { barId, visited }, context) => {
-      // Roll back this bar only. The rest of the snapshot may have picked up
-      // other people's ticks since, and our own other taps may still be settling.
-      edit(client, (s) => withVisit(s, barId, context?.previous ?? null))
+    onError: (error, { visited }) =>
       toast.error(
         visited ? "Kunne ikke krydse baren af" : "Kunne ikke fortryde",
         { description: error.message }
-      )
-    },
-    onSuccess: (data) => commit(client, data, 1),
+      ),
     onSettled: () => settle(client),
   })
 
   const add = useMutation({
-    mutationKey: [...WRITE_KEY, "add"],
+    mutationKey: ADD_KEY,
     mutationFn: (bar: AddBarRequest) => request("/api/bars", json(bar)),
-    onMutate: async (bar) => {
-      await client.cancelQueries({ queryKey: STATE_KEY })
-      const tempId = `${TEMP_PREFIX}${Date.now().toString(36)}`
-      edit(client, (s) =>
-        withBar(s, {
-          id: tempId,
-          name: bar.name,
-          address: bar.address,
-          note: bar.note,
-          hours: { ...emptyOpeningHours(), ...bar.hours },
-          custom: true,
-        })
-      )
-      return { tempId }
-    },
-    onError: (error, _bar, context) => {
-      if (context) edit(client, (s) => withoutBar(s, context.tempId))
-      toast.error("Kunne ikke tilføje baren", { description: error.message })
-    },
-    onSuccess: (data) => commit(client, data, 1),
+    onMutate: () => client.cancelQueries({ queryKey: STATE_KEY }),
+    onSuccess: (data) => commit(client, data),
+    onError: (error) =>
+      toast.error("Kunne ikke tilføje baren", { description: error.message }),
     onSettled: () => settle(client),
   })
 
   const remove = useMutation({
-    mutationKey: [...WRITE_KEY, "delete"],
+    mutationKey: DELETE_KEY,
     mutationFn: (barId: string) =>
       request(`/api/bars?id=${encodeURIComponent(barId)}`, { method: "DELETE" }),
-    onMutate: async (barId) => {
-      await client.cancelQueries({ queryKey: STATE_KEY })
-      const snapshot = client.getQueryData<StateResponse>(STATE_KEY)
-      const index = snapshot?.bars.findIndex((b) => b.id === barId) ?? -1
-      const context = {
-        bar: index >= 0 ? snapshot?.bars[index] : undefined,
-        visit: snapshot?.visits[barId],
-        index,
-      }
-      edit(client, (s) => withoutBar(s, barId))
-      return context
-    },
-    onError: (error, barId, context) => {
-      // Put back exactly what we took out, and nothing else.
-      if (context?.bar) {
-        const bar = context.bar
-        const visit = context.visit
-        edit(client, (s) => {
-          const restored = withBar(s, bar, context.index)
-          return visit ? withVisit(restored, barId, visit) : restored
-        })
-      }
-      toast.error("Kunne ikke slette baren", { description: error.message })
-    },
-    onSuccess: (data) => commit(client, data, 1),
+    onMutate: () => client.cancelQueries({ queryKey: STATE_KEY }),
+    onSuccess: (data) => commit(client, data),
+    onError: (error) =>
+      toast.error("Kunne ikke slette baren", { description: error.message }),
     onSettled: () => settle(client),
   })
 
+  // Which bars are waiting on the server right now. Read from the mutation
+  // cache rather than kept alongside it, so it cannot drift out of step.
+  // `useMutationState` shares its result structurally, so these sets keep their
+  // identity between renders and stay usable as memo dependencies.
+  const toggling = useMutationState({
+    filters: { mutationKey: VISIT_KEY, status: "pending" },
+    select: (mutation) => (mutation.state.variables as ToggleVisitRequest).barId,
+  })
+  const deleting = useMutationState({
+    filters: { mutationKey: DELETE_KEY, status: "pending" },
+    select: (mutation) => mutation.state.variables as string,
+  })
+  const togglingBars = React.useMemo(() => new Set(toggling), [toggling])
+  const deletingBars = React.useMemo(() => new Set(deleting), [deleting])
+
+  /**
+   * Is this exact bar already waiting on the server? Asked of the mutation
+   * cache rather than of the rendered `togglingBars`, so two taps inside one
+   * frame are caught too — the disabled attribute alone would not see them.
+   */
+  const isBusy = (key: readonly unknown[], barId: string) =>
+    client.isMutating({
+      mutationKey: key,
+      predicate: (mutation) => {
+        const vars = mutation.state.variables
+        const id = typeof vars === "string" ? vars : (vars as ToggleVisitRequest)?.barId
+        return id === barId
+      },
+    }) > 0
+
   const toggleVisit = (barId: string, visited: boolean) => {
-    // A bar that only exists optimistically has no id the server would accept.
-    if (isTempId(barId)) return
+    // Taps while the previous one is still in flight are dropped, not queued.
+    if (isBusy(VISIT_KEY, barId)) return
     toggle.mutate({ barId, visited })
   }
 
   const deleteBar = (barId: string) => {
-    if (isTempId(barId)) return
+    if (isBusy(DELETE_KEY, barId)) return
     remove.mutate(barId)
   }
 
@@ -369,5 +286,9 @@ export function useGameState() {
     toggleVisit,
     addBar,
     deleteBar,
+    /** Bar ids whose tick is waiting on the server. */
+    togglingBars,
+    /** Bar ids being deleted. */
+    deletingBars,
   }
 }

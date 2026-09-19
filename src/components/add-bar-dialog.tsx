@@ -2,7 +2,7 @@
 
 import * as React from "react"
 import { cn } from "cn"
-import { PlusIcon } from "lucide-react"
+import { LoaderCircleIcon, PlusIcon } from "lucide-react"
 import { toast } from "sonner"
 
 import { Button } from "@/components/ui/button"
@@ -191,7 +191,13 @@ export function AddBarDialog({ now, onAdd }: AddBarDialogProps) {
             >
               Annullér
             </Button>
-            <Button type="submit" className="h-11" disabled={!name.trim() || saving}>
+            <Button
+              type="submit"
+              className="h-11"
+              aria-busy={saving}
+              disabled={!name.trim() || saving}
+            >
+              {saving && <LoaderCircleIcon className="animate-spin" />}
               {saving ? "Gemmer…" : "Tilføj bar"}
             </Button>
           </DialogFooter>

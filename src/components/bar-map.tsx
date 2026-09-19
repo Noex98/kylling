@@ -2,7 +2,7 @@
 
 import * as React from "react"
 import { divIcon, type DivIcon } from "leaflet"
-import { CheckIcon, NavigationIcon } from "lucide-react"
+import { CheckIcon, LoaderCircleIcon, NavigationIcon } from "lucide-react"
 import { MapContainer, Marker, Popup, TileLayer } from "react-leaflet"
 
 import "leaflet/dist/leaflet.css"
@@ -22,7 +22,12 @@ import type { Bar, Visit } from "@/lib/types"
  * `next/dynamic` with `{ ssr: false }` — see src/app/page.tsx.
  */
 
-export type BarMapRow = { bar: Bar; visit?: Visit }
+export type BarMapRow = {
+  bar: Bar
+  visit?: Visit
+  /** This bar's tick is waiting on the server. */
+  pending?: boolean
+}
 
 type BarMapProps = {
   /** Already filtered by the chips in the header. */
@@ -221,7 +226,7 @@ function BarPopup({
   now: Date
   onToggle: (bar: Bar, visited: boolean) => void
 }) {
-  const { bar, visit } = row
+  const { bar, visit, pending } = row
   const visited = Boolean(visit)
   const status = getOpenState(bar.hours, now)
 
@@ -247,10 +252,12 @@ function BarPopup({
         size="lg"
         className="h-11 w-full text-sm"
         aria-pressed={visited}
+        aria-busy={pending}
+        disabled={pending}
         onClick={() => onToggle(bar, !visited)}
       >
-        <CheckIcon />
-        {visited ? "Fortryd" : "Kryds af"}
+        {pending ? <LoaderCircleIcon className="animate-spin" /> : <CheckIcon />}
+        {pending ? "Gemmer…" : visited ? "Fortryd" : "Kryds af"}
       </Button>
 
       <div className="flex items-center gap-2">

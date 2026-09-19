@@ -2,7 +2,13 @@
 
 import * as React from "react"
 import { cn } from "cn"
-import { CheckIcon, MapPinIcon, NavigationIcon, Trash2Icon } from "lucide-react"
+import {
+  CheckIcon,
+  LoaderCircleIcon,
+  MapPinIcon,
+  NavigationIcon,
+  Trash2Icon,
+} from "lucide-react"
 
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -24,11 +30,23 @@ type BarCardProps = {
   bar: Bar
   visit?: Visit
   now: Date
+  /** This bar's tick is waiting on the server. */
+  pending?: boolean
+  /** This bar is being deleted. */
+  deleting?: boolean
   onToggle: (visited: boolean) => void
   onDelete?: () => void
 }
 
-export function BarCard({ bar, visit, now, onToggle, onDelete }: BarCardProps) {
+export function BarCard({
+  bar,
+  visit,
+  now,
+  pending = false,
+  deleting = false,
+  onToggle,
+  onDelete,
+}: BarCardProps) {
   const status = getOpenState(bar.hours, now)
   const visited = Boolean(visit)
   const soon =
@@ -98,6 +116,7 @@ export function BarCard({ bar, visit, now, onToggle, onDelete }: BarCardProps) {
 
         <TickButton
           visited={visited}
+          pending={pending}
           label={bar.name}
           onClick={() => onToggle(!visited)}
         />
@@ -128,10 +147,12 @@ export function BarCard({ bar, visit, now, onToggle, onDelete }: BarCardProps) {
             variant="ghost"
             size="icon-lg"
             aria-label={`Slet ${bar.name}`}
+            aria-busy={deleting}
+            disabled={deleting}
             className="ml-auto text-muted-foreground hover:text-destructive"
             onClick={onDelete}
           >
-            <Trash2Icon />
+            {deleting ? <LoaderCircleIcon className="animate-spin" /> : <Trash2Icon />}
           </Button>
         )}
       </div>
@@ -164,10 +185,12 @@ function StatusBadge({ open, soon }: { open: boolean; soon: boolean }) {
 /** Deliberately huge — this gets tapped one-handed, in the dark, after a beer. */
 function TickButton({
   visited,
+  pending,
   label,
   onClick,
 }: {
   visited: boolean
+  pending: boolean
   label: string
   onClick: () => void
 }) {
@@ -175,17 +198,31 @@ function TickButton({
     <button
       type="button"
       onClick={onClick}
+      disabled={pending}
       aria-pressed={visited}
-      aria-label={visited ? `Fortryd besøg på ${label}` : `Kryds ${label} af`}
+      aria-busy={pending}
+      aria-label={
+        pending
+          ? `Gemmer ${label}…`
+          : visited
+            ? `Fortryd besøg på ${label}`
+            : `Kryds ${label} af`
+      }
       className={cn(
         "flex size-16 shrink-0 items-center justify-center rounded-2xl border-2 transition-colors outline-none select-none",
-        "focus-visible:ring-3 focus-visible:ring-ring/50 active:translate-y-px",
+        "focus-visible:ring-3 focus-visible:ring-ring/50 not-disabled:active:translate-y-px",
         visited
           ? "border-emerald-400 bg-emerald-500 text-white"
-          : "border-border bg-muted/40 text-muted-foreground hover:bg-muted"
+          : "border-border bg-muted/40 text-muted-foreground not-disabled:hover:bg-muted",
+        // Waiting on the server, so it must neither look nor be tappable.
+        pending && "cursor-progress border-dashed opacity-60"
       )}
     >
-      <CheckIcon className="size-8" strokeWidth={3} />
+      {pending ? (
+        <LoaderCircleIcon className="size-8 animate-spin" strokeWidth={3} />
+      ) : (
+        <CheckIcon className="size-8" strokeWidth={3} />
+      )}
     </button>
   )
 }
