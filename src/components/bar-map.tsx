@@ -184,12 +184,25 @@ const MAP_CSS = `
   border: 1px solid var(--border);
   box-shadow: 0 10px 30px rgba(0, 0, 0, 0.6);
 }
-.kylling-map .leaflet-popup-content-wrapper { border-radius: 14px; padding: 0; }
-.kylling-map .leaflet-popup-content { margin: 0; width: auto !important; min-width: 210px; }
+.kylling-map .leaflet-popup-content-wrapper { border-radius: 12px; padding: 0; }
+/* A popup covers the very thing you are looking at, so it gets no more room
+   than it needs: no min-width of our own, and Leaflet's 1.08em bump undone so
+   the type sizes below are the sizes you actually get. */
+.kylling-map .leaflet-popup-content {
+  margin: 0; width: auto !important; min-width: 0;
+  font-size: inherit; line-height: 1.3;
+}
+/* Leaflet ships "margin: 1.3em 0" on every <p> inside a popup at (0,1,1),
+   which outranks Tailwind's preflight reset — about 20px of dead space above
+   the name and below the hours line, for nothing. Kill it here and let flex
+   "gap" own the spacing: gap is a different property, so no utility class
+   downstream has to win a specificity fight against this rule. */
+.kylling-map .leaflet-popup-content p { margin: 0; }
 .kylling-map .leaflet-popup-content a { color: inherit; }
+/* Trimmed visually, but the 34px hit area stays — it is still a tap target. */
 .kylling-map .leaflet-popup-close-button {
-  width: 34px; height: 34px; padding: 6px 6px 0 0;
-  font-size: 22px; color: var(--muted-foreground);
+  width: 34px; height: 34px; padding: 4px 4px 0 0;
+  font-size: 20px; color: var(--muted-foreground);
 }
 .kylling-map .leaflet-control-zoom a {
   width: 38px; height: 38px; line-height: 38px; font-size: 20px;
@@ -658,25 +671,30 @@ function BarPopup({
       : null
 
   return (
-    <div className="w-[220px] space-y-2 p-3 font-sans">
-      <div className="space-y-0.5">
-        <p className="font-heading text-base leading-tight font-semibold text-foreground">
+    <div className="flex w-[200px] flex-col gap-2 p-2.5 font-sans">
+      <div className="flex flex-col gap-0.5">
+        {/* pr-6 keeps the first line clear of Leaflet's close button, and two
+            lines is the ceiling — a long name must not push the tick control
+            down the screen. */}
+        <p className="font-heading line-clamp-2 pr-6 text-[15px] leading-tight font-semibold text-foreground">
           {bar.name}
         </p>
         <p
-          className={
+          className={`text-[13px] leading-tight ${
             closingIn
-              ? "text-sm font-semibold text-amber-400"
+              ? "font-semibold text-amber-400"
               : status.isOpen
-                ? "text-sm font-medium text-emerald-400"
-                : "text-sm text-muted-foreground"
-          }
+                ? "font-medium text-emerald-400"
+                : "text-muted-foreground"
+          }`}
         >
           {formatOpeningLine(bar.hours, now)}
           {closingIn ? ` · ${closingIn}` : ""}
         </p>
       </div>
 
+      {/* h-11 is load-bearing: one-handed, in the dark, after a few drinks.
+          Nothing below is allowed to shrink it. */}
       <Button
         variant={visited ? "secondary" : "default"}
         size="lg"
