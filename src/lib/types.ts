@@ -33,8 +33,6 @@ export type Visit = {
   at: string;
   /** Who ticked it off, if they entered a name. */
   by?: string;
-  /** Was the chicken found here? */
-  chickenFound?: boolean;
 };
 
 /** The whole server-side game state. Serialised as-is to JSON. */
@@ -74,7 +72,6 @@ export type ToggleVisitRequest = {
   barId: string;
   visited: boolean;
   by?: string;
-  chickenFound?: boolean;
 };
 
 /** POST /api/bars */

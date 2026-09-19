@@ -2,7 +2,7 @@
 
 import * as React from "react"
 import { cn } from "cn"
-import { CheckIcon, MapPinIcon, Trash2Icon } from "lucide-react"
+import { CheckIcon, MapPinIcon, NavigationIcon, Trash2Icon } from "lucide-react"
 
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -14,6 +14,7 @@ import {
   formatTime,
   getOpenState,
 } from "@/lib/hours"
+import { googleMapsDirectionsUrl, googleMapsUrl } from "@/lib/maps"
 import type { Bar, Visit } from "@/lib/types"
 
 /** Bars opening within this many minutes get the "åbner snart" treatment. */
@@ -24,18 +25,10 @@ type BarCardProps = {
   visit?: Visit
   now: Date
   onToggle: (visited: boolean) => void
-  onChicken: () => void
   onDelete?: () => void
 }
 
-export function BarCard({
-  bar,
-  visit,
-  now,
-  onToggle,
-  onChicken,
-  onDelete,
-}: BarCardProps) {
+export function BarCard({ bar, visit, now, onToggle, onDelete }: BarCardProps) {
   const status = getOpenState(bar.hours, now)
   const visited = Boolean(visit)
   const soon =
@@ -63,12 +56,19 @@ export function BarCard({
             {bar.name}
           </h2>
 
-          {bar.address && (
-            <p className="flex items-start gap-1 text-sm text-muted-foreground">
-              <MapPinIcon className="mt-0.5 size-3.5 shrink-0" />
-              <span className="break-words">{bar.address}</span>
-            </p>
-          )}
+          {/* The address is the tap target — it opens Google Maps in a new tab. */}
+          <a
+            href={googleMapsUrl(bar)}
+            target="_blank"
+            rel="noopener noreferrer"
+            aria-label={`Åbn ${bar.name} i Google Maps`}
+            className="-mx-1.5 flex min-h-9 items-start gap-1.5 rounded-lg px-1.5 py-1.5 text-sm text-muted-foreground underline-offset-4 transition-colors hover:text-foreground focus-visible:ring-3 focus-visible:ring-ring/50 focus-visible:outline-none active:bg-muted/50"
+          >
+            <MapPinIcon className="mt-0.5 size-4 shrink-0" />
+            <span className="break-words underline decoration-dotted">
+              {bar.address ?? "Vis på Google Maps"}
+            </span>
+          </a>
 
           <div className="flex flex-wrap items-center gap-x-2 gap-y-1 pt-0.5">
             <StatusBadge open={status.isOpen} soon={soon} />
@@ -104,18 +104,17 @@ export function BarCard({
       </div>
 
       <div className="flex flex-wrap items-center gap-2 px-(--card-spacing)">
-        <Button
-          variant="outline"
-          size="lg"
-          onClick={onChicken}
-          aria-pressed={Boolean(visit?.chickenFound)}
-          className={cn(
-            "h-10 text-sm",
-            visit?.chickenFound &&
-              "border-amber-400/60 bg-amber-400/15 text-amber-300 hover:bg-amber-400/25"
-          )}
-        >
-          🐔 {visit?.chickenFound ? "Kylling fundet her!" : "Kylling her?"}
+        {/* Everyone is walking, so gå-ruten er det nyttige link. */}
+        <Button variant="outline" size="lg" className="h-10 text-sm" asChild>
+          <a
+            href={googleMapsDirectionsUrl(bar)}
+            target="_blank"
+            rel="noopener noreferrer"
+            aria-label={`Vis gåruten til ${bar.name}`}
+          >
+            <NavigationIcon />
+            Vis rute
+          </a>
         </Button>
 
         {visit && (

@@ -144,18 +144,13 @@ export function useGameState() {
   )
 
   const toggleVisit = React.useCallback(
-    async (
-      barId: string,
-      visited: boolean,
-      options?: { by?: string; chickenFound?: boolean }
-    ) => {
+    async (barId: string, visited: boolean, options?: { by?: string }) => {
       const previous = stateRef.current?.visits[barId] ?? null
       const optimistic: Visit | null = visited
         ? {
             barId,
             at: new Date(Date.now() + offsetRef.current).toISOString(),
             by: options?.by || previous?.by,
-            chickenFound: options?.chickenFound ?? previous?.chickenFound,
           }
         : null
 
@@ -165,9 +160,6 @@ export function useGameState() {
         barId,
         visited,
         ...(options?.by ? { by: options.by } : {}),
-        ...(options?.chickenFound !== undefined
-          ? { chickenFound: options.chickenFound }
-          : {}),
       }
 
       await post(

@@ -40,5 +40,9 @@ yarn-error.log*
 *.tsbuildinfo
 next-env.d.ts
 
-# server-side game state (file-backed store)
-/data/state.json
+
+.vercel
+.env*
+
+# playwright mcp screenshots
+.playwright-mcp/

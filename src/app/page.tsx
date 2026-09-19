@@ -1,15 +1,32 @@
 "use client"
 
 import * as React from "react"
+import dynamic from "next/dynamic"
 import { cn } from "cn"
+import { ListIcon, MapIcon } from "lucide-react"
 import { toast } from "sonner"
 
 import { AddBarDialog } from "@/components/add-bar-dialog"
 import { BarCard } from "@/components/bar-card"
+import { barMatches, BarSearchField } from "@/components/bar-search"
 import { PlayerNameField, usePlayerName } from "@/components/player-name"
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { useGameState } from "@/components/use-game-state"
 import { getOpenState, type OpenState } from "@/lib/hours"
 import type { Bar, Visit } from "@/lib/types"
+
+/** Leaflet reaches for `window`, so the map may only load in the browser. */
+const BarMap = dynamic(
+  () => import("@/components/bar-map").then((m) => m.BarMap),
+  {
+    ssr: false,
+    loading: () => (
+      <p className="py-10 text-center text-sm text-muted-foreground">
+        Henter kort… 🗺️
+      </p>
+    ),
+  }
+)
 
 const FILTERS = [
   { id: "alle", label: "Alle" },
@@ -21,6 +38,31 @@ const FILTERS = [
 type Filter = (typeof FILTERS)[number]["id"]
 
 type Row = { bar: Bar; visit?: Visit; status: OpenState }
+
+type Tab = "liste" | "kort"
+
+/**
+ * The map has to fill exactly what is left below the sticky header — measure it
+ * rather than guess, since the header grows with the search result line.
+ */
+function useHeaderHeight(): [React.RefObject<HTMLElement | null>, number] {
+  const ref = React.useRef<HTMLElement | null>(null)
+  const [height, setHeight] = React.useState(0)
+
+  React.useEffect(() => {
+    const el = ref.current
+    if (!el) return
+    const update = () => setHeight(el.getBoundingClientRect().height)
+    // Measuring the DOM is exactly what this effect is for.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    update()
+    const observer = new ResizeObserver(update)
+    observer.observe(el)
+    return () => observer.disconnect()
+  }, [])
+
+  return [ref, height]
+}
 
 /**
  * Open and unvisited first, then whatever opens soonest, then the hopeless
@@ -52,6 +94,9 @@ export default function Home() {
     useGameState()
   const [name, setName] = usePlayerName()
   const [filter, setFilter] = React.useState<Filter>("alle")
+  const [query, setQuery] = React.useState("")
+  const [tab, setTab] = React.useState<Tab>("liste")
+  const [headerRef, headerHeight] = useHeaderHeight()
 
   const rows = React.useMemo<Row[]>(() => {
     if (!state || !now) return []
@@ -64,19 +109,24 @@ export default function Home() {
       .sort(compareRows)
   }, [state, now])
 
+  // Progress is about the whole crawl, so it ignores the search.
   const total = rows.length
   const visited = rows.filter((r) => r.visit).length
-  const openNow = rows.filter((r) => r.status.isOpen).length
-  const chickens = rows.filter((r) => r.visit?.chickenFound).length
+
+  // The chips count what is left after the search — they compose, not compete.
+  const searched = React.useMemo(
+    () => rows.filter((row) => barMatches(row.bar, query)),
+    [rows, query]
+  )
 
   const counts: Record<Filter, number> = {
-    alle: total,
-    aabne: openNow,
-    mangler: total - visited,
-    besoegt: visited,
+    alle: searched.length,
+    aabne: searched.filter((r) => r.status.isOpen).length,
+    mangler: searched.filter((r) => !r.visit).length,
+    besoegt: searched.filter((r) => r.visit).length,
   }
 
-  const shown = rows.filter((row) => {
+  const shown = searched.filter((row) => {
     if (filter === "aabne") return row.status.isOpen
     if (filter === "mangler") return !row.visit
     if (filter === "besoegt") return Boolean(row.visit)
@@ -88,36 +138,46 @@ export default function Home() {
     if (next) toast.success(`${bar.name} krydset af 🐔`)
   }
 
-  function handleChicken(bar: Bar, visit?: Visit) {
-    const found = !visit?.chickenFound
-    void toggleVisit(bar.id, true, {
-      by: name.trim() || undefined,
-      chickenFound: found,
-    })
-    if (found) toast.success(`🐔 Kylling fundet på ${bar.name}!`)
-  }
-
   function handleDelete(bar: Bar) {
     if (!window.confirm(`Slet "${bar.name}"?`)) return
     void deleteBar(bar.id)
   }
 
   return (
-    <div className="min-h-dvh bg-background">
-      <header className="sticky top-0 z-20 border-b bg-background/90 backdrop-blur-md">
+    <Tabs
+      value={tab}
+      onValueChange={(value) => setTab(value as Tab)}
+      className="min-h-dvh gap-0 bg-background"
+    >
+      <header
+        ref={headerRef}
+        className="sticky top-0 z-20 border-b bg-background/90 backdrop-blur-md"
+      >
         <div className="mx-auto w-full max-w-lg space-y-3 px-3 py-3">
           <div className="flex items-baseline justify-between gap-2">
             <h1 className="font-heading text-xl font-bold tracking-tight">
               🐔 Kylling <span className="text-muted-foreground">Aarhus</span>
             </h1>
-            {chickens > 0 && (
-              <span className="text-sm text-amber-300">
-                {chickens} {chickens === 1 ? "kylling" : "kyllinger"} fundet
-              </span>
-            )}
           </div>
 
           <Progress visited={visited} total={total} />
+
+          <BarSearchField
+            value={query}
+            onChange={setQuery}
+            resultCount={shown.length}
+          />
+
+          <TabsList className="grid h-11! w-full grid-cols-2">
+            <TabsTrigger value="liste" className="gap-1.5 text-sm font-semibold">
+              <ListIcon />
+              Liste
+            </TabsTrigger>
+            <TabsTrigger value="kort" className="gap-1.5 text-sm font-semibold">
+              <MapIcon />
+              Kort
+            </TabsTrigger>
+          </TabsList>
 
           <div className="grid grid-cols-4 gap-1.5">
             {FILTERS.map((f) => (
@@ -141,51 +201,73 @@ export default function Home() {
         </div>
       </header>
 
-      <main className="mx-auto w-full max-w-lg space-y-2.5 px-3 py-3 pb-16">
-        <PlayerNameField name={name} onNameChange={setName} />
+      <TabsContent value="liste" asChild>
+        <main className="mx-auto w-full max-w-lg space-y-2.5 px-3 py-3 pb-16 text-base">
+          <PlayerNameField name={name} onNameChange={setName} />
 
-        {error && (
-          <p className="rounded-lg bg-destructive/10 px-3 py-2 text-sm text-destructive">
-            Ingen kontakt til serveren — prøver igen…
-          </p>
-        )}
+          {error && (
+            <p className="rounded-lg bg-destructive/10 px-3 py-2 text-sm text-destructive">
+              Ingen kontakt til serveren — prøver igen…
+            </p>
+          )}
 
+          {loading || !now ? (
+            <p className="py-10 text-center text-sm text-muted-foreground">
+              Henter barer… 🐔
+            </p>
+          ) : (
+            <>
+              {shown.map(({ bar, visit }) => (
+                <BarCard
+                  key={bar.id}
+                  bar={bar}
+                  visit={visit}
+                  now={now}
+                  onToggle={(next) => handleToggle(bar, next)}
+                  onDelete={bar.custom ? () => handleDelete(bar) : undefined}
+                />
+              ))}
+
+              {shown.length === 0 && (
+                <p className="py-10 text-center text-sm text-muted-foreground">
+                  {emptyMessage(filter, query)}
+                </p>
+              )}
+
+              <AddBarDialog now={now} onAdd={addBar} />
+            </>
+          )}
+        </main>
+      </TabsContent>
+
+      <TabsContent
+        value="kort"
+        className="overscroll-none"
+        // Exactly the viewport below the header, so the page itself never scrolls.
+        style={{ height: `calc(100dvh - ${headerHeight}px)` }}
+      >
         {loading || !now ? (
           <p className="py-10 text-center text-sm text-muted-foreground">
             Henter barer… 🐔
           </p>
+        ) : shown.length === 0 ? (
+          <p className="py-10 text-center text-sm text-muted-foreground">
+            {emptyMessage(filter, query)}
+          </p>
         ) : (
-          <>
-            {shown.map(({ bar, visit }) => (
-              <BarCard
-                key={bar.id}
-                bar={bar}
-                visit={visit}
-                now={now}
-                onToggle={(next) => handleToggle(bar, next)}
-                onChicken={() => handleChicken(bar, visit)}
-                onDelete={bar.custom ? () => handleDelete(bar) : undefined}
-              />
-            ))}
-
-            {shown.length === 0 && (
-              <p className="py-10 text-center text-sm text-muted-foreground">
-                {filter === "aabne"
-                  ? "Ingen barer er åbne lige nu."
-                  : filter === "besoegt"
-                    ? "I har ikke krydset nogen barer af endnu."
-                    : filter === "mangler"
-                      ? "Alle barer er besøgt. Godt gået! 🐔"
-                      : "Ingen barer endnu."}
-              </p>
-            )}
-
-            <AddBarDialog now={now} onAdd={addBar} />
-          </>
+          <BarMap rows={shown} now={now} onToggle={handleToggle} />
         )}
-      </main>
-    </div>
+      </TabsContent>
+    </Tabs>
   )
+}
+
+function emptyMessage(filter: Filter, query: string): string {
+  if (query.trim()) return `Ingen barer matcher "${query.trim()}".`
+  if (filter === "aabne") return "Ingen barer er åbne lige nu."
+  if (filter === "besoegt") return "I har ikke krydset nogen barer af endnu."
+  if (filter === "mangler") return "Alle barer er besøgt. Godt gået! 🐔"
+  return "Ingen barer endnu."
 }
 
 function Progress({ visited, total }: { visited: number; total: number }) {
