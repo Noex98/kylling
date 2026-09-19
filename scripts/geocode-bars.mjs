@@ -1,4 +1,4 @@
-// Geocodes every bar in src/data/parts/*.ts and writes src/data/coords.ts.
+// Geocodes every bar in src/data/bars.ts and writes src/data/coords.ts.
 //
 //   node scripts/geocode-bars.mjs
 //
@@ -15,7 +15,7 @@
 // Re-runnable: it overwrites src/data/coords.ts cleanly every time.
 // Relies on Node's built-in TypeScript type stripping (Node >= 22.18).
 
-import { readdirSync, writeFileSync } from "node:fs";
+import { writeFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 
 // --- config ----------------------------------------------------------------
@@ -35,7 +35,7 @@ const VIEWBOX = "10.0,56.3,10.4,56.0";
 /** Anything outside this is discarded outright. */
 const BOUNDS = { minLat: 56.0, maxLat: 56.3, minLng: 10.0, maxLng: 10.4 };
 
-const PARTS_DIR = new URL("../src/data/parts/", import.meta.url);
+const BARS_FILE = new URL("../src/data/bars.ts", import.meta.url);
 const OUT_FILE = new URL("../src/data/coords.ts", import.meta.url);
 
 // --- helpers ---------------------------------------------------------------
@@ -136,26 +136,8 @@ async function nominatim(query) {
 // --- load the bars ---------------------------------------------------------
 
 async function loadBars() {
-  const files = readdirSync(PARTS_DIR)
-    .filter((f) => f.endsWith(".ts"))
-    .sort();
-  const bars = [];
-  for (const file of files) {
-    const mod = await import(new URL(file, PARTS_DIR).href);
-    const exported = Object.values(mod).find(Array.isArray);
-    if (!exported) {
-      console.error(`${file}: no exported array found`);
-      process.exit(1);
-    }
-    bars.push(...exported);
-  }
-  // The seed list has one bar listed twice; keep the first occurrence.
-  const seen = new Set();
-  return bars.filter((bar) => {
-    if (seen.has(bar.id)) return false;
-    seen.add(bar.id);
-    return true;
-  });
+  const { bars } = await import(BARS_FILE.href);
+  return bars;
 }
 
 // --- output ----------------------------------------------------------------
