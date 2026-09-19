@@ -4,6 +4,7 @@
 // stale the moment the start slips, the window is anchored to whatever day the
 // app is being used on — so it stays meaningful without anyone editing it.
 
+import { clueFor } from "@/data/clues"
 import { coords } from "@/data/coords"
 import {
   formatTime,
@@ -116,6 +117,11 @@ export function exclusionOf(
   zone: Zone | null
 ): Exclusion | null {
   if (visit) return { reason: "visited", at: visit.at }
+
+  // Being told the chicken is not there outranks every piece of geometry below:
+  // a clue is about this game, the opening hours and the circle are not.
+  const clue = clueFor(bar.id)
+  if (clue) return { reason: "clue", note: clue.note }
 
   const openMinutes = openDuringGame(bar.hours, game)
   if (openMinutes < MIN_OPEN_MINUTES) return { reason: "closed", openMinutes }

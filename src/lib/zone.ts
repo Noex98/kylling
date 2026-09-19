@@ -31,13 +31,22 @@ export const ZONES: ZoneAnnouncement[] = [
   // samme centrum og den samme radius, men det er en aflæsning af et billede —
   // regn med ±150 m, og se noten i svaret om hvilke barer det er tæt på.
   { centre: AARHUS_CENTRE, radius: 1250 },
+  // Zone 2, meldt ud ca. 18:01. Rykket ~300 m mod sydvest og skrumpet til det
+  // halve. Målt samme vej som zone 1: billedet er zoomet 1,7× ind i forhold til
+  // det forrige, hvilket giver 2,24 m/px. Venstre- og højrekant giver hver for
+  // sig det samme centrum, og den lodrette udstrækning giver samme radius som
+  // den vandrette — men det er stadig en aflæsning af et billede, ±150 m.
+  { centre: { lat: 56.1558, lng: 10.2065 }, radius: 620 },
 ]
+
+/** Every zone announced tonight, oldest first. */
+export function allZones(): Zone[] {
+  return ZONES.map((zone, i) => ({ ...zone, number: i + 1 }))
+}
 
 /** The zone in force, or null while none has been announced. */
 export function currentZone(): Zone | null {
-  const latest = ZONES.at(-1)
-  if (!latest) return null
-  return { ...latest, number: ZONES.length }
+  return allZones().at(-1) ?? null
 }
 
 /** How far outside the circle this position is. 0 means it is inside. */

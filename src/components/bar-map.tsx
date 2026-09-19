@@ -55,8 +55,12 @@ type BarMapProps = {
   rows: BarMapRow[]
   /** Server-aligned "now", so open/closed matches the list. */
   now: Date
-  /** The circle in force, or null while no zone has been announced. */
-  zone: Zone | null
+  /**
+   * Every zone announced tonight, oldest first. The last one is in force; the
+   * earlier ones stay on the map as outlines, because where the circle *was* is
+   * how you read where it is going.
+   */
+  zones: Zone[]
   onToggle: (bar: Bar, visited: boolean) => void
 }
 
@@ -100,8 +104,12 @@ function ringAround(zone: Zone): [number, number][] {
   })
 }
 
-function ZoneOverlay({ zone }: { zone: Zone }) {
-  const ring = React.useMemo(() => ringAround(zone), [zone])
+function ZoneOverlay({ zones }: { zones: Zone[] }) {
+  const zone = zones.at(-1)
+  const past = zones.slice(0, -1)
+  const ring = React.useMemo(() => (zone ? ringAround(zone) : []), [zone])
+
+  if (!zone) return null
 
   return (
     <>
@@ -118,6 +126,28 @@ function ZoneOverlay({ zone }: { zone: Zone }) {
           className: "kylling-zone-outside",
         }}
       />
+
+      {/* Where the circle has already been. Drawn *after* the dimming, not
+          before: every past zone is larger than the live one, so it lies in the
+          part of the map that just got painted over — draw them first and they
+          vanish under it. Dashed and dim so they read as history rather than as
+          several zones all being in force at once. */}
+      {past.map((old) => (
+        <Circle
+          key={old.number}
+          center={[old.centre.lat, old.centre.lng]}
+          radius={old.radius}
+          interactive={false}
+          pathOptions={{
+            color: ZONE_EDGE,
+            weight: 1.5,
+            opacity: 0.45,
+            dashArray: "4 7",
+            fill: false,
+            className: "kylling-zone-past",
+          }}
+        />
+      ))}
       {/* The edge itself, drawn separately so it keeps a crisp line over the
           dimmed side and the lit one. */}
       <Circle
@@ -324,7 +354,8 @@ const MAP_CSS = `
 .kylling-map:fullscreen { background: var(--background); }
 `
 
-export function BarMap({ rows, now, zone, onToggle }: BarMapProps) {
+export function BarMap({ rows, now, zones, onToggle }: BarMapProps) {
+  const zone = zones.at(-1) ?? null
   // Not every bar has coordinates — those must not vanish silently.
   const { placed, missing } = React.useMemo(() => {
     const placed: { row: BarMapRow; lat: number; lng: number }[] = []
@@ -528,7 +559,7 @@ export function BarMap({ rows, now, zone, onToggle }: BarMapProps) {
             maxZoom={19}
           />
 
-          {zone && <ZoneOverlay zone={zone} />}
+          <ZoneOverlay zones={zones} />
 
           {placed.map(({ row, lat, lng }) => {
             const kind = kindOf(row, now)
@@ -638,6 +669,16 @@ export function BarMap({ rows, now, zone, onToggle }: BarMapProps) {
                 style={{ borderColor: ZONE_EDGE }}
               />
               Zone {zone.number} — {formatMetres(zone.radius)}
+            </li>
+          )}
+          {zones.length > 1 && (
+            <li className="flex items-center gap-1.5 text-xs text-muted-foreground">
+              <span
+                aria-hidden
+                className="inline-block size-3 shrink-0 rounded-full border border-dashed"
+                style={{ borderColor: ZONE_EDGE, opacity: 0.6 }}
+              />
+              Tidligere zoner
             </li>
           )}
         </ul>

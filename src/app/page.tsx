@@ -20,7 +20,7 @@ import {
 } from "@/lib/game"
 import { getOpenState, type OpenState } from "@/lib/hours"
 import type { Bar, Visit } from "@/lib/types"
-import { currentZone } from "@/lib/zone"
+import { allZones, currentZone } from "@/lib/zone"
 
 /** Leaflet reaches for `window`, so the map may only load in the browser. */
 const BarMap = dynamic(
@@ -263,6 +263,7 @@ export default function Home() {
   const [headerRef, headerHeight] = useHeaderHeight()
 
   const zone = currentZone()
+  const zones = allZones()
 
   const rows = React.useMemo<Row[]>(() => {
     if (!state || !now) return []
@@ -436,7 +437,7 @@ export default function Home() {
               <BarMap
                 rows={shown}
                 now={now}
-                zone={zone}
+                zones={zones}
                 onToggle={handleToggle}
               />
             )}
