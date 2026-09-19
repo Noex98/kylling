@@ -27,6 +27,11 @@ export const clues: Clue[] = [
     ],
     note: "Udelukket af en ledetråd",
   },
+  {
+    // Meldt ud ca. 18:25.
+    barIds: ["sherlock-holmes-pub"],
+    note: "Udelukket af en ledetråd",
+  },
 ]
 
 /** The clue that ruled this bar out, or undefined if none has. */
