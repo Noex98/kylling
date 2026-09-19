@@ -4,11 +4,11 @@ import * as React from "react"
 import dynamic from "next/dynamic"
 import { cn } from "cn"
 import { ListIcon, MapIcon } from "lucide-react"
-import { toast } from "sonner"
 
 import { AddBarDialog } from "@/components/add-bar-dialog"
 import { BarCard } from "@/components/bar-card"
 import { barMatches, BarSearchField } from "@/components/bar-search"
+import { SyncIndicator } from "@/components/sync-indicator"
 import { Button } from "@/components/ui/button"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { useGameState } from "@/components/use-game-state"
@@ -271,6 +271,7 @@ export default function Home() {
                   🐔 Kylling{" "}
                   <span className="text-muted-foreground">Aarhus</span>
                 </h1>
+                <SyncIndicator />
               </div>
 
               <Progress visited={visited} total={total} />
@@ -322,12 +323,6 @@ export default function Home() {
 
           <TabsContent value="liste" asChild>
             <main className="mx-auto w-full max-w-lg space-y-2.5 px-3 py-3 pb-16 text-base">
-              {error && (
-                <p className="rounded-lg bg-destructive/10 px-3 py-2 text-sm text-destructive">
-                  Ingen kontakt til serveren — prøver igen…
-                </p>
-              )}
-
               {shown.map(({ bar, visit, pending }) => (
                 <BarCard
                   key={bar.id}
