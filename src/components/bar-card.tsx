@@ -7,7 +7,6 @@ import {
   CheckIcon,
   LoaderCircleIcon,
   MapPinIcon,
-  NavigationIcon,
   Trash2Icon,
 } from "lucide-react"
 
@@ -22,7 +21,7 @@ import {
   getOpenState,
   type OpenState,
 } from "@/lib/hours"
-import { googleMapsDirectionsUrl, googleMapsUrl } from "@/lib/maps"
+import { googleMapsUrl } from "@/lib/maps"
 import type { Bar, Visit } from "@/lib/types"
 
 type BarCardProps = {
@@ -53,6 +52,7 @@ export function BarCard({
   const hoursLine = status.isOpen
     ? formatOpeningLine(bar.hours, now)
     : formatNextOpening(bar.hours, now)
+  const showFooter = visited || Boolean(bar.custom && onDelete)
 
   return (
     <Card
@@ -73,46 +73,45 @@ export function BarCard({
               visited && "text-muted-foreground line-through"
             )}
           >
-            {bar.name}
-          </h2>
-
-          {/* Address left, status right, one line. They only wrap apart when
-              the address genuinely needs the width. */}
-          <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5">
-            {/* The address is the tap target — it opens Google Maps in a new tab. */}
+            {/* The name is the tap target now that the address is gone — it
+                opens Google Maps in a new tab. Kept inline rather than flex so
+                a long name still wraps word by word; the vertical padding is
+                hit area only, which is why it may overlap without pushing the
+                line below it. The pin is what says this goes somewhere. */}
             <a
               href={googleMapsUrl(bar)}
               target="_blank"
               rel="noopener noreferrer"
               aria-label={`Åbn ${bar.name} i Google Maps`}
-              className="-mx-1.5 flex min-h-9 min-w-0 flex-1 items-center gap-1.5 rounded-lg px-1.5 py-1 text-sm text-muted-foreground underline-offset-4 transition-colors hover:text-foreground focus-visible:ring-3 focus-visible:ring-ring/50 focus-visible:outline-none active:bg-muted/50"
+              className="-mx-1 rounded-lg px-1 py-1.5 underline decoration-dotted decoration-muted-foreground/50 underline-offset-4 transition-colors hover:text-primary focus-visible:ring-3 focus-visible:ring-ring/50 focus-visible:outline-none"
             >
-              <MapPinIcon className="size-4 shrink-0" />
-              <span className="truncate underline decoration-dotted">
-                {bar.address ?? "Vis på Google Maps"}
-              </span>
+              {bar.name}
+              <MapPinIcon
+                aria-hidden
+                className="ml-1.5 inline size-4 shrink-0 align-[-0.15em] text-muted-foreground"
+              />
             </a>
+          </h2>
 
-            {(hoursLine || !status.isOpen) && (
-              <span className="flex shrink-0 items-center gap-2">
-                <StatusBadge status={status} />
-                {hoursLine && (
-                  <span
-                    className={cn(
-                      "text-sm",
-                      // Open is the norm tonight, so it stays quiet; a closed
-                      // bar's next opening is the part worth reading.
-                      status.isOpen
-                        ? "text-muted-foreground"
-                        : "font-medium text-foreground/90"
-                    )}
-                  >
-                    {hoursLine}
-                  </span>
-                )}
-              </span>
-            )}
-          </div>
+          {(hoursLine || !status.isOpen) && (
+            <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5">
+              <StatusBadge status={status} />
+              {hoursLine && (
+                <span
+                  className={cn(
+                    "text-sm",
+                    // Open is the norm tonight, so it stays quiet; a closed
+                    // bar's next opening is the part worth reading.
+                    status.isOpen
+                      ? "text-muted-foreground"
+                      : "font-medium text-foreground/90"
+                  )}
+                >
+                  {hoursLine}
+                </span>
+              )}
+            </div>
+          )}
 
           {/* Notes run long and are colour, not navigation — two lines at most,
               and never louder than the name or the hours. */}
@@ -134,45 +133,40 @@ export function BarCard({
         />
       </div>
 
-      <div className="flex flex-wrap items-center gap-2 px-(--card-spacing)">
-        {/* Everyone is walking, so gå-ruten er det nyttige link. */}
-        <Button variant="outline" size="lg" className="h-10 text-sm" asChild>
-          <a
-            href={googleMapsDirectionsUrl(bar)}
-            target="_blank"
-            rel="noopener noreferrer"
-            aria-label={`Vis gåruten til ${bar.name}`}
-          >
-            <NavigationIcon />
-            Vis rute
-          </a>
-        </Button>
+      {/* Only rendered when it has something in it — an empty row would still
+          cost the card's gap, on every one of the 105. */}
+      {showFooter && (
+        <div className="flex flex-wrap items-center gap-2 px-(--card-spacing)">
+          {visit && (
+            <span className="text-xs text-muted-foreground">
+              Krydset kl. {formatTime(new Date(visit.at))}
+            </span>
+          )}
 
-        {visit && (
-          <span className="text-xs text-muted-foreground">
-            Krydset kl. {formatTime(new Date(visit.at))}
-          </span>
-        )}
-
-        {bar.custom && onDelete && (
-          <Button
-            variant="ghost"
-            size="icon-lg"
-            aria-label={`Slet ${bar.name}`}
-            aria-busy={deleting}
-            disabled={deleting}
-            className="ml-auto text-muted-foreground hover:text-destructive"
-            // Guarded rather than merely disabled: a second click that lands in
-            // the same frame as the first would still reach this handler.
-            onClick={() => {
-              if (deleting) return
-              onDelete()
-            }}
-          >
-            {deleting ? <LoaderCircleIcon className="animate-spin" /> : <Trash2Icon />}
-          </Button>
-        )}
-      </div>
+          {bar.custom && onDelete && (
+            <Button
+              variant="ghost"
+              size="icon-lg"
+              aria-label={`Slet ${bar.name}`}
+              aria-busy={deleting}
+              disabled={deleting}
+              className="ml-auto text-muted-foreground hover:text-destructive"
+              // Guarded rather than merely disabled: a second click that lands in
+              // the same frame as the first would still reach this handler.
+              onClick={() => {
+                if (deleting) return
+                onDelete()
+              }}
+            >
+              {deleting ? (
+                <LoaderCircleIcon className="animate-spin" />
+              ) : (
+                <Trash2Icon />
+              )}
+            </Button>
+          )}
+        </div>
+      )}
     </Card>
   )
 }
