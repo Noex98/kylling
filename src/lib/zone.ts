@@ -11,7 +11,7 @@
 // so every phone sees the same circle; the rest of the app already reads it
 // through `currentZone()` and will not need to change.
 
-import { metresBetween, type LatLng } from "@/lib/maps"
+import { AARHUS_CENTRE, metresBetween, type LatLng } from "@/lib/maps"
 
 export type Zone = {
   centre: LatLng
@@ -23,7 +23,15 @@ export type Zone = {
 /** Centre and radius of each zone as it was announced, oldest first. */
 export type ZoneAnnouncement = { centre: LatLng; radius: number }
 
-export const ZONES: ZoneAnnouncement[] = []
+export const ZONES: ZoneAnnouncement[] = [
+  // Zone 1, meldt ud ca. 16:47. Læst af satellitkortet i meldingen ved at måle
+  // cirklens fire kanter mod kendte punkter: nordkanten mellem Nørre Stenbro og
+  // Katrinebjerg, sydkanten ved Frederiksbjerg, østkanten ude i bugten øst for
+  // Aarhus Ø, vestkanten lige vest for Ceres Byen. Alle fire passer på det
+  // samme centrum og den samme radius, men det er en aflæsning af et billede —
+  // regn med ±150 m, og se noten i svaret om hvilke barer det er tæt på.
+  { centre: AARHUS_CENTRE, radius: 1250 },
+]
 
 /** The zone in force, or null while none has been announced. */
 export function currentZone(): Zone | null {
