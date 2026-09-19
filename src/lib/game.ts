@@ -6,7 +6,8 @@
 
 import { coords } from "@/data/coords"
 import { openMinutesBetween, parseTime, type HoursInput } from "@/lib/hours"
-import type { Bar } from "@/lib/types"
+import { formatMetres } from "@/lib/maps"
+import type { Bar, Visit } from "@/lib/types"
 import { metresOutside, type Zone } from "@/lib/zone"
 
 /** When the chickens go into hiding. */
@@ -52,32 +53,49 @@ export function openDuringGame(hours: HoursInput, game: GameWindow): number {
 }
 
 /**
- * Why a bar is out of play. Being *visited* is deliberately not one of these:
- * a bar you have ticked off is still a bar that counted, and it stays on the
- * list wearing its tick. Out of play means the opposite — it never counted and
- * never will, through no decision of yours.
+ * Why a bar is no longer in play. Every bar is either in play or carries
+ * exactly one of these — that is the whole model, and every way a bar can leave
+ * the game is a case here rather than a separate flag somewhere.
  *
- * Each case carries the number behind it so the UI can say how far out it is
- * rather than just that it is.
+ * Each case carries the number or note behind it, so the UI can say *how* far
+ * out a bar is rather than only that it is.
+ *
+ * `clue` has no producer yet: the clues arrive later in the evening and will
+ * rule bars out the same way the others do. It is in the union now so that
+ * every place which handles a reason is already forced to handle that one.
  */
-export type OutOfPlay =
+export type Exclusion =
+  | { reason: "visited"; at: string }
+  | { reason: "clue"; note?: string }
   | { reason: "closed"; openMinutes: number }
   | { reason: "zone"; metresOutside: number }
 
 /**
- * Why this bar is out, or null if it is in play.
+ * Why this bar is out, or null if it is still in play.
  *
- * Closed beats outside-the-zone when both are true: the zone moves and will
- * keep moving, but a bar that is shut all evening is a permanent fact, and it
- * is the more useful thing to be told.
+ * The order is the precedence, and it is not arbitrary:
+ *
+ *  - `visited` first, because it is the only one that records something you
+ *    *did*. A bar you drank at counts, whatever the circle did afterwards.
+ *  - `clue` next: being told the chicken is not there is a stronger statement
+ *    than any of the geometry below it.
+ *  - `closed` before `zone`, because the zone moves and will keep moving, while
+ *    a bar that is shut all evening is a permanent fact and the more useful
+ *    thing to be told.
  */
-export function outOfPlay(
+export function exclusionOf(
   bar: Bar,
+  visit: Visit | undefined,
   game: GameWindow,
-  zone: Zone
-): OutOfPlay | null {
+  zone: Zone | null
+): Exclusion | null {
+  if (visit) return { reason: "visited", at: visit.at }
+
   const openMinutes = openDuringGame(bar.hours, game)
   if (openMinutes < MIN_OPEN_MINUTES) return { reason: "closed", openMinutes }
+
+  // No zone announced yet means nothing is outside one.
+  if (!zone) return null
 
   // No coordinates means no way to prove it is outside — every bar added from
   // the UI during the game is in this position, and throwing those out for
@@ -87,4 +105,29 @@ export function outOfPlay(
 
   const metres = metresOutside(zone, position)
   return metres > 0 ? { reason: "zone", metresOutside: Math.round(metres) } : null
+}
+
+/** Is this an exclusion that took the bar off the board, rather than a tick? */
+export function isRuledOut(exclusion: Exclusion | null): boolean {
+  return exclusion !== null && exclusion.reason !== "visited"
+}
+
+// ---------------------------------------------------------------------------
+// Danish formatting
+// ---------------------------------------------------------------------------
+
+/** The one line that says why, short enough to sit on a card. */
+export function describeExclusion(exclusion: Exclusion): string {
+  switch (exclusion.reason) {
+    case "visited":
+      return "Besøgt"
+    case "clue":
+      return exclusion.note ?? "Udelukket af en ledetråd"
+    case "closed":
+      return exclusion.openMinutes === 0
+        ? "Lukket under hele spillet"
+        : `Kun åben ${exclusion.openMinutes} min af spillet`
+    case "zone":
+      return `${formatMetres(exclusion.metresOutside)} uden for zonen`
+  }
 }

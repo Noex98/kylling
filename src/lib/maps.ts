@@ -27,6 +27,12 @@ export function metresBetween(a: LatLng, b: LatLng): number {
   return 2 * EARTH_RADIUS_M * Math.asin(Math.sqrt(h));
 }
 
+/** "1,6 km" · "350 m" — a distance you can picture, not a count of metres. */
+export function formatMetres(metres: number): string {
+  if (metres < 1000) return `${Math.round(metres)} m`;
+  return `${(metres / 1000).toLocaleString("da-DK", { maximumFractionDigits: 1 })} km`;
+}
+
 /**
  * A Google Maps link that needs no API key and opens the native app on a
  * phone. Searching by name + address beats linking coordinates: it lands on

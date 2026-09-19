@@ -4,6 +4,7 @@ import * as React from "react"
 import { cn } from "cn"
 import {
   AlarmClockIcon,
+  BanIcon,
   CheckIcon,
   LoaderCircleIcon,
   MapPinIcon,
@@ -13,6 +14,7 @@ import {
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
+import { describeExclusion, isRuledOut, type Exclusion } from "@/lib/game"
 import {
   formatIn,
   formatNextOpening,
@@ -27,6 +29,8 @@ import type { Bar, Visit } from "@/lib/types"
 type BarCardProps = {
   bar: Bar
   visit?: Visit
+  /** Why this bar is out of the game, or null while it is still in. */
+  exclusion?: Exclusion | null
   now: Date
   /** This bar's tick is waiting on the server. */
   pending?: boolean
@@ -39,6 +43,7 @@ type BarCardProps = {
 export function BarCard({
   bar,
   visit,
+  exclusion = null,
   now,
   pending = false,
   deleting = false,
@@ -47,6 +52,10 @@ export function BarCard({
 }: BarCardProps) {
   const status = getOpenState(bar.hours, now)
   const visited = Boolean(visit)
+  // A bar that is out for any reason other than your own tick explains itself
+  // instead of showing opening hours: on the Udelukket list the reason *is* the
+  // content, and "Lukker 02:00" on a bar the circle left behind is noise.
+  const ruledOut = isRuledOut(exclusion) ? exclusion : null
   // Open: when it closes. Closed: when it opens again ("Åbner i morgen 20:00").
   // null only for a bar that never opens again — then the badge says it all.
   const hoursLine = status.isOpen
@@ -93,24 +102,31 @@ export function BarCard({
             </a>
           </h2>
 
-          {(hoursLine || !status.isOpen) && (
-            <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5">
-              <StatusBadge status={status} />
-              {hoursLine && (
-                <span
-                  className={cn(
-                    "text-sm",
-                    // Open is the norm tonight, so it stays quiet; a closed
-                    // bar's next opening is the part worth reading.
-                    status.isOpen
-                      ? "text-muted-foreground"
-                      : "font-medium text-foreground/90"
-                  )}
-                >
-                  {hoursLine}
-                </span>
-              )}
-            </div>
+          {ruledOut ? (
+            <p className="flex items-center gap-1.5 text-sm text-muted-foreground">
+              <BanIcon className="size-3.5 shrink-0" />
+              {describeExclusion(ruledOut)}
+            </p>
+          ) : (
+            (hoursLine || !status.isOpen) && (
+              <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5">
+                <StatusBadge status={status} />
+                {hoursLine && (
+                  <span
+                    className={cn(
+                      "text-sm",
+                      // Open is the norm tonight, so it stays quiet; a closed
+                      // bar's next opening is the part worth reading.
+                      status.isOpen
+                        ? "text-muted-foreground"
+                        : "font-medium text-foreground/90"
+                    )}
+                  >
+                    {hoursLine}
+                  </span>
+                )}
+              </div>
+            )
           )}
 
           {/* Notes run long and are colour, not navigation — two lines at most,

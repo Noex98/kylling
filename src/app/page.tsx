@@ -3,7 +3,7 @@
 import * as React from "react"
 import dynamic from "next/dynamic"
 import { cn } from "cn"
-import { CheckIcon, ListIcon, MapIcon } from "lucide-react"
+import { ListIcon, MapIcon } from "lucide-react"
 
 import { AddBarDialog } from "@/components/add-bar-dialog"
 import { BarCard } from "@/components/bar-card"
@@ -13,14 +13,14 @@ import { Button } from "@/components/ui/button"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { useGameState } from "@/components/use-game-state"
 import {
+  exclusionOf,
   gameWindow,
-  outOfPlay,
-  type GameWindow,
-  type OutOfPlay,
+  isRuledOut,
+  type Exclusion,
 } from "@/lib/game"
-import { formatTime, getOpenState, type OpenState } from "@/lib/hours"
+import { getOpenState, type OpenState } from "@/lib/hours"
 import type { Bar, Visit } from "@/lib/types"
-import { zoneAt, type Zone } from "@/lib/zone"
+import { currentZone } from "@/lib/zone"
 
 /** Leaflet reaches for `window`, so the map may only load in the browser. */
 const BarMap = dynamic(
@@ -35,13 +35,26 @@ const BarMap = dynamic(
   }
 )
 
+/**
+ * Every bar is in exactly one of the first three: still to do, ticked off, or
+ * ruled out. "Alle" is the union, kept so a search can reach a bar whichever
+ * bucket it has fallen into.
+ */
 const FILTERS = [
-  { id: "alle", label: "Alle" },
   { id: "mangler", label: "Mangler" },
   { id: "besoegt", label: "Besøgt" },
+  { id: "udelukket", label: "Udelukket" },
+  { id: "alle", label: "Alle" },
 ] as const
 
 type Filter = (typeof FILTERS)[number]["id"]
+
+function matchesFilter(row: Row, filter: Filter): boolean {
+  if (filter === "mangler") return row.exclusion === null
+  if (filter === "besoegt") return row.exclusion?.reason === "visited"
+  if (filter === "udelukket") return isRuledOut(row.exclusion)
+  return true
+}
 
 /**
  * The view switch is the quieter of the two selectors on screen, so the active
@@ -56,8 +69,8 @@ type Row = {
   bar: Bar
   visit?: Visit
   status: OpenState
-  /** Why this bar cannot be part of tonight's crawl, or null if it can. */
-  out: OutOfPlay | null
+  /** The one reason this bar has left the game, or null while it is still in. */
+  exclusion: Exclusion | null
   pending: boolean
 }
 
@@ -243,65 +256,49 @@ export default function Home() {
     togglingBars,
     deletingBars,
   } = useGameState()
-  const [filter, setFilter] = React.useState<Filter>("alle")
+  const [filter, setFilter] = React.useState<Filter>("mangler")
   const [query, setQuery] = React.useState("")
   const [tab, setTab] = React.useState<Tab>("liste")
-  const [onlyInPlay, setOnlyInPlay] = React.useState(true)
   const [headerRef, headerHeight] = useHeaderHeight()
 
-  const game = React.useMemo(() => (now ? gameWindow(now) : null), [now])
-  const zone = React.useMemo(
-    () => (game && now ? zoneAt(game.start, now) : null),
-    [game, now]
-  )
+  const zone = currentZone()
 
   const rows = React.useMemo<Row[]>(() => {
-    if (!state || !now || !game || !zone) return []
+    if (!state || !now) return []
+    const game = gameWindow(now)
     return state.bars
-      .map((bar) => ({
-        bar,
-        visit: state.visits[bar.id],
-        status: getOpenState(bar.hours, now),
-        out: outOfPlay(bar, game, zone),
-        pending: togglingBars.has(bar.id),
-      }))
+      .map((bar) => {
+        const visit = state.visits[bar.id]
+        return {
+          bar,
+          visit,
+          status: getOpenState(bar.hours, now),
+          exclusion: exclusionOf(bar, visit, game, zone),
+          pending: togglingBars.has(bar.id),
+        }
+      })
       .sort(compareRows)
-  }, [state, now, game, zone, togglingBars])
+  }, [state, now, zone, togglingBars])
 
-  const excluded = {
-    closed: rows.filter((row) => row.out?.reason === "closed").length,
-    zone: rows.filter((row) => row.out?.reason === "zone").length,
-  }
-  const excludedTotal = excluded.closed + excluded.zone
-
-  // The one filter that changes what the crawl *is* rather than what you are
-  // looking at, so everything below — including the score — is counted from it.
-  const inPlay = React.useMemo(
-    () => (onlyInPlay ? rows.filter((row) => !row.out) : rows),
-    [rows, onlyInPlay]
-  )
-
-  // Progress is about the whole crawl, so it ignores the search.
-  const total = inPlay.length
-  const visited = inPlay.filter((r) => r.visit).length
+  // Progress is the crawl you can actually do: the bars you have ticked, over
+  // those plus the ones still standing. A bar that is shut all evening or that
+  // the circle left behind is not a target you failed to hit, so it is not in
+  // the denominator — otherwise 100% would be unreachable by design.
+  const done = rows.filter((r) => r.exclusion?.reason === "visited").length
+  const left = rows.filter((r) => r.exclusion === null).length
+  const total = done + left
 
   // The chips count what is left after the search — they compose, not compete.
   const searched = React.useMemo(
-    () => inPlay.filter((row) => barMatches(row.bar, query)),
-    [inPlay, query]
+    () => rows.filter((row) => barMatches(row.bar, query)),
+    [rows, query]
   )
 
-  const counts: Record<Filter, number> = {
-    alle: searched.length,
-    mangler: searched.filter((r) => !r.visit).length,
-    besoegt: searched.filter((r) => r.visit).length,
-  }
+  const counts = Object.fromEntries(
+    FILTERS.map((f) => [f.id, searched.filter((r) => matchesFilter(r, f.id)).length])
+  ) as Record<Filter, number>
 
-  const shown = searched.filter((row) => {
-    if (filter === "mangler") return !row.visit
-    if (filter === "besoegt") return Boolean(row.visit)
-    return true
-  })
+  const shown = searched.filter((row) => matchesFilter(row, filter))
 
   function handleToggle(bar: Bar, next: boolean) {
     // The "krydset af" toast is fired by the mutation once the server has
@@ -349,7 +346,7 @@ export default function Home() {
                 <SyncIndicator className="mt-1" />
               </div>
 
-              <Progress visited={visited} total={total} />
+              <Progress visited={done} total={total} />
 
               <BarSearchField
                 value={query}
@@ -368,7 +365,7 @@ export default function Home() {
                 </TabsTrigger>
               </TabsList>
 
-              <div className="grid grid-cols-3 gap-1.5">
+              <div className="grid grid-cols-4 gap-1.5">
                 {FILTERS.map((f) => (
                   <button
                     key={f.id}
@@ -396,27 +393,17 @@ export default function Home() {
                   </button>
                 ))}
               </div>
-
-              {game && zone && (
-                <GameFilterToggle
-                  active={onlyInPlay}
-                  onToggle={() => setOnlyInPlay((v) => !v)}
-                  now={now}
-                  game={game}
-                  zone={zone}
-                  excluded={excluded}
-                />
-              )}
             </div>
           </header>
 
           <TabsContent value="liste" asChild>
             <main className="mx-auto w-full max-w-lg space-y-2 px-3 py-3 pb-16 text-base">
-              {shown.map(({ bar, visit, pending }) => (
+              {shown.map(({ bar, visit, exclusion, pending }) => (
                 <BarCard
                   key={bar.id}
                   bar={bar}
                   visit={visit}
+                  exclusion={exclusion}
                   now={now}
                   pending={pending}
                   deleting={deletingBars.has(bar.id)}
@@ -425,13 +412,7 @@ export default function Home() {
                 />
               ))}
 
-              {shown.length === 0 && (
-                <EmptyState
-                  filter={filter}
-                  query={query}
-                  hiding={onlyInPlay && excludedTotal > 0}
-                />
-              )}
+              {shown.length === 0 && <EmptyState filter={filter} query={query} />}
 
               <AddBarDialog now={now} onAdd={addBar} />
             </main>
@@ -446,20 +427,14 @@ export default function Home() {
             style={{ height: `calc(100dvh - ${headerHeight}px)` }}
           >
             {shown.length === 0 ? (
-              <EmptyState
-                filter={filter}
-                query={query}
-                hiding={onlyInPlay && excludedTotal > 0}
-              />
+              <EmptyState filter={filter} query={query} />
             ) : (
-              zone && (
-                <BarMap
-                  rows={shown}
-                  now={now}
-                  zone={zone}
-                  onToggle={handleToggle}
-                />
-              )
+              <BarMap
+                rows={shown}
+                now={now}
+                zone={zone}
+                onToggle={handleToggle}
+              />
             )}
           </TabsContent>
         </Tabs>
@@ -478,126 +453,19 @@ export default function Home() {
  * out in the list view, so it says where the game is rather than only what is
  * hidden: what closes the circle next, and when.
  */
-function playStatusLine(now: Date, game: GameWindow, zone: Zone): string {
-  if (now < game.start) return `Starter ${formatTime(game.start)}`
-  if (now >= game.end) return "Spillet er slut"
-  const stage = `Zone ${zone.index}/${zone.count}`
-  return zone.shrinksAt
-    ? `${stage} · krymper ${formatTime(zone.shrinksAt)}`
-    : `${stage} · sidste zone`
-}
-
-/**
- * Bars that are shut all evening, or that the circle has left behind, are not
- * something anyone wants to scroll past — but they are not wrong either, so
- * this hides them rather than the data doing it, and says how many so nobody
- * wonders where a bar they know went.
- *
- * Built as a button with `aria-pressed` like the chips above it rather than a
- * checkbox in a label: one element, one tap target, and no label-forwarding to
- * double-fire the toggle. The visible line stays short enough for a phone; the
- * breakdown of *why* things are out lives in the label, where it costs nothing.
- *
- * Deliberately the shortest control in the header. It is set once and left
- * alone, so it has no business being as tall as the things you actually work —
- * and every pixel it gives back here is a pixel the map gets, since the map is
- * sized from whatever is left below the header.
- */
-function GameFilterToggle({
-  active,
-  onToggle,
-  now,
-  game,
-  zone,
-  excluded,
-}: {
-  active: boolean
-  onToggle: () => void
-  now: Date
-  game: GameWindow
-  zone: Zone
-  excluded: { closed: number; zone: number }
-}) {
-  const total = excluded.closed + excluded.zone
-  const why = [
-    excluded.closed > 0 ? `${excluded.closed} har lukket` : null,
-    excluded.zone > 0 ? `${excluded.zone} uden for zonen` : null,
-  ]
-    .filter(Boolean)
-    .join(", ")
-
-  return (
-    <button
-      type="button"
-      onClick={onToggle}
-      aria-pressed={active}
-      aria-label={
-        total === 0
-          ? "Kun barer der er i spil — ingen er ude lige nu"
-          : `Kun barer der er i spil — ${why}`
-      }
-      className={cn(
-        // One line, and the `after` pseudo element puts a thumb-sized hit area
-        // back around a 30px box — the same trick the checkbox primitive uses,
-        // so shrinking this costs nothing to tap and nothing to the layout.
-        "relative flex w-full items-center gap-2 rounded-lg border px-2.5 py-1.5 text-xs transition-colors",
-        "after:absolute after:inset-x-0 after:-inset-y-2",
-        active ? "border-primary/40 bg-primary/10" : "border-border bg-muted/40"
-      )}
-    >
-      <span
-        aria-hidden
-        className={cn(
-          "flex size-4 shrink-0 items-center justify-center rounded-[4px] border transition-colors",
-          active
-            ? "border-primary bg-primary text-primary-foreground"
-            : "border-border"
-        )}
-      >
-        {active && <CheckIcon className="size-3" strokeWidth={3.5} />}
-      </span>
-
-      <span
-        aria-hidden
-        className={cn(
-          "shrink-0 font-semibold",
-          active ? "text-primary" : "text-foreground/80"
-        )}
-      >
-        Kun i spil
-      </span>
-
-      <span
-        aria-hidden
-        className="ml-auto min-w-0 truncate text-muted-foreground"
-      >
-        {playStatusLine(now, game, zone)}
-        {total > 0 && ` · ${total} ude`}
-      </span>
-    </button>
-  )
-}
-
-/**
- * Every empty screen gets a face and a second line: the first says what happened,
- * the second is what a teammate would have said out loud.
- */
 function emptyMessage(
   filter: Filter,
-  query: string,
-  hiding: boolean
+  query: string
 ): { icon: string; title: string; hint: string } {
   const trimmed = query.trim()
   if (trimmed)
     return {
       icon: "🔍",
       title: `Ingen barer matcher "${trimmed}".`,
-      // A bar hidden by the game filter looks exactly like a bar that was never
-      // in the list, so say which it might be before anyone starts doubting the
-      // data at half past three.
-      hint: hiding
-        ? "Prøv en anden stavemåde — eller slå filteret fra, hvis baren er ude af spil."
-        : "Prøv en anden stavemåde — eller søg på adressen.",
+      // A bar sitting under another chip looks exactly like a bar that was never
+      // in the list, so point at "Alle" before anyone starts doubting the data
+      // at half past three.
+      hint: "Prøv en anden stavemåde — eller søg igen under Alle.",
     }
   if (filter === "besoegt")
     return {
@@ -605,11 +473,17 @@ function emptyMessage(
       title: "I har ikke krydset nogen barer af endnu.",
       hint: "Den første øl drikker ikke sig selv.",
     }
+  if (filter === "udelukket")
+    return {
+      icon: "🎯",
+      title: "Ingen barer er udelukket endnu.",
+      hint: "Alt er stadig i spil — kyllingen kan være hvor som helst.",
+    }
   if (filter === "mangler")
     return {
       icon: "🏆",
-      title: "Alle barer er besøgt. Godt gået!",
-      hint: "Der er ikke flere kyllinger at finde.",
+      title: "Ingen barer tilbage.",
+      hint: "Enten er I færdige, eller også tog zonen resten.",
     }
   return {
     icon: "🐔",
@@ -618,17 +492,8 @@ function emptyMessage(
   }
 }
 
-function EmptyState({
-  filter,
-  query,
-  hiding,
-}: {
-  filter: Filter
-  query: string
-  /** The game filter is on and is actually holding something back. */
-  hiding: boolean
-}) {
-  const { icon, title, hint } = emptyMessage(filter, query, hiding)
+function EmptyState({ filter, query }: { filter: Filter; query: string }) {
+  const { icon, title, hint } = emptyMessage(filter, query)
 
   return (
     <div className="flex flex-col items-center gap-1.5 px-6 py-12 text-center">

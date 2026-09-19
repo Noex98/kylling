@@ -28,14 +28,10 @@ import {
   type GeolocationTracker,
 } from "@/components/use-geolocation"
 import { coords } from "@/data/coords"
-import {
-  formatIn,
-  formatOpeningLine,
-  formatTime,
-  getOpenState,
-} from "@/lib/hours"
+import { formatIn, formatOpeningLine, getOpenState } from "@/lib/hours"
 import {
   AARHUS_CENTRE,
+  formatMetres,
   googleMapsDirectionsUrl,
   googleMapsUrl,
 } from "@/lib/maps"
@@ -59,19 +55,13 @@ type BarMapProps = {
   rows: BarMapRow[]
   /** Server-aligned "now", so open/closed matches the list. */
   now: Date
-  /** The circle in force right now. Drawn whether or not the filter is on. */
-  zone: Zone
+  /** The circle in force, or null while no zone has been announced. */
+  zone: Zone | null
   onToggle: (bar: Bar, visited: boolean) => void
 }
 
 /** The colour of the closed-off area. Not a warning — a dead zone. */
 const ZONE_EDGE = "#f59e0b"
-
-/** "1,6 km" · "350 m" — a radius you can picture, not a number of metres. */
-function formatMetres(metres: number): string {
-  if (metres < 1000) return `${metres} m`
-  return `${(metres / 1000).toLocaleString("da-DK", { maximumFractionDigits: 1 })} km`
-}
 
 /**
  * The zone drawn the way Fortnite draws it: the *outside* is what gets painted,
@@ -538,7 +528,7 @@ export function BarMap({ rows, now, zone, onToggle }: BarMapProps) {
             maxZoom={19}
           />
 
-          <ZoneOverlay zone={zone} />
+          {zone && <ZoneOverlay zone={zone} />}
 
           {placed.map(({ row, lat, lng }) => {
             const kind = kindOf(row, now)
@@ -640,15 +630,16 @@ export function BarMap({ rows, now, zone, onToggle }: BarMapProps) {
           )}
           {/* Fullscreen hides the header, so this is the only place the zone is
               named while the map is filling the screen. */}
-          <li className="flex items-center gap-1.5 text-xs font-medium text-amber-200/90">
-            <span
-              aria-hidden
-              className="inline-block size-3 shrink-0 rounded-full border-2"
-              style={{ borderColor: ZONE_EDGE }}
-            />
-            Zone {zone.index}/{zone.count} — {formatMetres(zone.radius)}
-            {zone.shrinksAt && ` · krymper ${formatTime(zone.shrinksAt)}`}
-          </li>
+          {zone && (
+            <li className="flex items-center gap-1.5 text-xs font-medium text-amber-200/90">
+              <span
+                aria-hidden
+                className="inline-block size-3 shrink-0 rounded-full border-2"
+                style={{ borderColor: ZONE_EDGE }}
+              />
+              Zone {zone.number} — {formatMetres(zone.radius)}
+            </li>
+          )}
         </ul>
 
         {/* Calm and inline: geolocation errors repeat, and a toast per repeat
