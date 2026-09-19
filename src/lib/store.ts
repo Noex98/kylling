@@ -22,13 +22,17 @@ export class StoreUnavailableError extends Error {
   }
 }
 
-function assertConfigured(): void {
-  if (!process.env.BLOB_READ_WRITE_TOKEN) {
-    throw new StoreUnavailableError(
-      "Serveren mangler BLOB_READ_WRITE_TOKEN, så intet kan gemmes. " +
-        "Forbind en Vercel Blob-storage til projektet og deploy igen.",
-    );
-  }
+/**
+ * The SDK authenticates either with BLOB_READ_WRITE_TOKEN or, on Vercel, with
+ * the project's OIDC credentials — in which case no token env var exists at
+ * all. So we cannot check configuration up front; we let the SDK try and turn
+ * whatever it complains about into a message a player can act on.
+ */
+function asStoreUnavailable(err: unknown): Error {
+  const message = err instanceof Error ? err.message : String(err);
+  return new StoreUnavailableError(
+    `Serveren kan ikke tilgå spillets data: ${message}`,
+  );
 }
 
 /** Defensive parse — the stored document may be missing, stale or hand-edited. */
@@ -58,13 +62,16 @@ let blobUrl: string | null = null;
 
 async function resolveUrl(): Promise<string | null> {
   if (blobUrl) return blobUrl;
-  const { blobs } = await list({ prefix: BLOB_PATH, limit: 1 });
-  blobUrl = blobs.find((b) => b.pathname === BLOB_PATH)?.url ?? null;
+  try {
+    const { blobs } = await list({ prefix: BLOB_PATH, limit: 1 });
+    blobUrl = blobs.find((b) => b.pathname === BLOB_PATH)?.url ?? null;
+  } catch (err) {
+    throw asStoreUnavailable(err);
+  }
   return blobUrl;
 }
 
 async function read(): Promise<GameState> {
-  assertConfigured();
   const url = await resolveUrl();
   // Nothing stored yet — the first write creates it.
   if (!url) return emptyState();
@@ -83,15 +90,18 @@ async function read(): Promise<GameState> {
 }
 
 async function write(state: GameState): Promise<void> {
-  assertConfigured();
-  const { url } = await put(BLOB_PATH, JSON.stringify(state), {
-    access: "public",
-    contentType: "application/json",
-    addRandomSuffix: false,
-    allowOverwrite: true,
-    cacheControlMaxAge: 0,
-  });
-  blobUrl = url;
+  try {
+    const { url } = await put(BLOB_PATH, JSON.stringify(state), {
+      access: "public",
+      contentType: "application/json",
+      addRandomSuffix: false,
+      allowOverwrite: true,
+      cacheControlMaxAge: 0,
+    });
+    blobUrl = url;
+  } catch (err) {
+    throw asStoreUnavailable(err);
+  }
 }
 
 // ---------------------------------------------------------------------------
