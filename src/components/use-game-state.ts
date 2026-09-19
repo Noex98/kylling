@@ -144,23 +144,18 @@ export function useGameState() {
   )
 
   const toggleVisit = React.useCallback(
-    async (barId: string, visited: boolean, options?: { by?: string }) => {
+    async (barId: string, visited: boolean) => {
       const previous = stateRef.current?.visits[barId] ?? null
       const optimistic: Visit | null = visited
         ? {
             barId,
             at: new Date(Date.now() + offsetRef.current).toISOString(),
-            by: options?.by || previous?.by,
           }
         : null
 
       setState((s) => (s ? withVisit(s, barId, optimistic) : s))
 
-      const body: ToggleVisitRequest = {
-        barId,
-        visited,
-        ...(options?.by ? { by: options.by } : {}),
-      }
+      const body: ToggleVisitRequest = { barId, visited }
 
       await post(
         "/api/visits",

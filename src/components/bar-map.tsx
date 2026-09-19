@@ -114,6 +114,7 @@ const MAP_CSS = `
 }
 .kylling-map .leaflet-popup-content-wrapper { border-radius: 14px; padding: 0; }
 .kylling-map .leaflet-popup-content { margin: 0; width: auto !important; min-width: 210px; }
+.kylling-map .leaflet-popup-content a { color: inherit; }
 .kylling-map .leaflet-popup-close-button {
   width: 34px; height: 34px; padding: 6px 6px 0 0;
   font-size: 22px; color: var(--muted-foreground);

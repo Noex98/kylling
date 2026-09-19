@@ -119,8 +119,7 @@ export function BarCard({ bar, visit, now, onToggle, onDelete }: BarCardProps) {
 
         {visit && (
           <span className="text-xs text-muted-foreground">
-            Krydset {visit.by ? `af ${visit.by} ` : ""}kl.{" "}
-            {formatTime(new Date(visit.at))}
+            Krydset kl. {formatTime(new Date(visit.at))}
           </span>
         )}
 

@@ -31,8 +31,6 @@ export type Visit = {
   barId: string;
   /** ISO timestamp of when it was ticked off. */
   at: string;
-  /** Who ticked it off, if they entered a name. */
-  by?: string;
 };
 
 /** The whole server-side game state. Serialised as-is to JSON. */
@@ -71,7 +69,6 @@ export type StateResponse = {
 export type ToggleVisitRequest = {
   barId: string;
   visited: boolean;
-  by?: string;
 };
 
 /** POST /api/bars */

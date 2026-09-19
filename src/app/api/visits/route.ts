@@ -14,7 +14,7 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
   }
 
-  const { barId, visited, by } = (body ?? {}) as Partial<ToggleVisitRequest>;
+  const { barId, visited } = (body ?? {}) as Partial<ToggleVisitRequest>;
 
   if (typeof barId !== "string" || !barId.trim()) {
     return NextResponse.json({ error: "barId is required" }, { status: 400 });
@@ -25,9 +25,6 @@ export async function POST(request: Request) {
       { status: 400 },
     );
   }
-  if (by !== undefined && typeof by !== "string") {
-    return NextResponse.json({ error: "by must be a string" }, { status: 400 });
-  }
   const id = barId.trim();
   try {
     const state = await updateState((s) => {
@@ -35,13 +32,12 @@ export async function POST(request: Request) {
         delete s.visits[id];
         return;
       }
-      // Re-ticking an already-visited bar keeps the original timestamp and
-      // name rather than resetting them.
+      // Re-ticking an already-visited bar keeps the original timestamp rather
+      // than resetting it.
       const existing = s.visits[id];
       s.visits[id] = {
         barId: id,
         at: existing?.at ?? new Date().toISOString(),
-        by: by?.trim() || existing?.by,
       };
     });
 

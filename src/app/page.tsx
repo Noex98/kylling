@@ -9,7 +9,6 @@ import { toast } from "sonner"
 import { AddBarDialog } from "@/components/add-bar-dialog"
 import { BarCard } from "@/components/bar-card"
 import { barMatches, BarSearchField } from "@/components/bar-search"
-import { PlayerNameField, usePlayerName } from "@/components/player-name"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { useGameState } from "@/components/use-game-state"
 import { getOpenState, type OpenState } from "@/lib/hours"
@@ -92,7 +91,6 @@ function compareRows(a: Row, b: Row): number {
 export default function Home() {
   const { state, now, error, loading, toggleVisit, addBar, deleteBar } =
     useGameState()
-  const [name, setName] = usePlayerName()
   const [filter, setFilter] = React.useState<Filter>("alle")
   const [query, setQuery] = React.useState("")
   const [tab, setTab] = React.useState<Tab>("liste")
@@ -134,7 +132,7 @@ export default function Home() {
   })
 
   function handleToggle(bar: Bar, next: boolean) {
-    void toggleVisit(bar.id, next, { by: name.trim() || undefined })
+    void toggleVisit(bar.id, next)
     if (next) toast.success(`${bar.name} krydset af 🐔`)
   }
 
@@ -203,8 +201,6 @@ export default function Home() {
 
       <TabsContent value="liste" asChild>
         <main className="mx-auto w-full max-w-lg space-y-2.5 px-3 py-3 pb-16 text-base">
-          <PlayerNameField name={name} onNameChange={setName} />
-
           {error && (
             <p className="rounded-lg bg-destructive/10 px-3 py-2 text-sm text-destructive">
               Ingen kontakt til serveren — prøver igen…
@@ -242,7 +238,9 @@ export default function Home() {
 
       <TabsContent
         value="kort"
-        className="overscroll-none"
+        // flex-none, or the Tabs column layout would size this from flex-basis
+        // and swallow the explicit height the map needs.
+        className="flex-none overscroll-none"
         // Exactly the viewport below the header, so the page itself never scrolls.
         style={{ height: `calc(100dvh - ${headerHeight}px)` }}
       >
