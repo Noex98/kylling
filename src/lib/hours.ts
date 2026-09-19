@@ -202,6 +202,34 @@ export function openMinutesBetween(
 }
 
 /**
+ * When the bar shuts for the last time in a window that overlaps `[from, to)`,
+ * or null if it is never open in that range.
+ *
+ * The returned time is the real closing time, which may fall outside the range
+ * — the caller asked when it shuts, not when the range ends. Unlike `closingAt`
+ * this does not need the bar to be open at any particular instant, so it still
+ * answers for one that opens partway through.
+ */
+export function lastClosingBetween(
+  hours: HoursInput,
+  from: Date,
+  to: Date
+): Date | null {
+  if (to <= from) return null
+  const spanDays = Math.ceil(
+    (to.getTime() - from.getTime()) / (MINUTES_PER_DAY * 60_000)
+  )
+  let last: Date | null = null
+  for (let offset = -1; offset <= spanDays + 1; offset++) {
+    const win = windowStartingOn(hours, from, offset)
+    // Only windows that actually overlap the range have anything to say.
+    if (!win || win.end <= from || win.start >= to) continue
+    if (!last || win.end > last) last = win.end
+  }
+  return last
+}
+
+/**
  * A bar closing within this many minutes is worth flagging. Once the evening is
  * under way almost everything is open, so "open" stops carrying information and
  * only the ones about to close do.

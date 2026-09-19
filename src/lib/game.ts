@@ -5,7 +5,14 @@
 // app is being used on — so it stays meaningful without anyone editing it.
 
 import { coords } from "@/data/coords"
-import { openMinutesBetween, parseTime, type HoursInput } from "@/lib/hours"
+import {
+  formatTime,
+  isOpenAt,
+  lastClosingBetween,
+  openMinutesBetween,
+  parseTime,
+  type HoursInput,
+} from "@/lib/hours"
 import { formatMetres } from "@/lib/maps"
 import type { Bar, Visit } from "@/lib/types"
 import { metresOutside, type Zone } from "@/lib/zone"
@@ -53,6 +60,21 @@ export function openDuringGame(hours: HoursInput, game: GameWindow): number {
 }
 
 /**
+ * Is the bar still open as the game ends?
+ *
+ * A hider has to sit there until the game is called, so a bar that locks its
+ * door at 19:00 cannot be where the chicken is — whoever was in it would have
+ * been turned out onto the street before anyone could find them.
+ *
+ * Asked one millisecond before the end rather than at it, because a bar whose
+ * closing time *is* the final whistle stayed open for the whole game, and the
+ * half-open interval in `currentWindow` would otherwise call that shut.
+ */
+function openAtTheEnd(hours: HoursInput, game: GameWindow): boolean {
+  return isOpenAt(hours, new Date(game.end.getTime() - 1))
+}
+
+/**
  * Why a bar is no longer in play. Every bar is either in play or carries
  * exactly one of these — that is the whole model, and every way a bar can leave
  * the game is a case here rather than a separate flag somewhere.
@@ -68,6 +90,7 @@ export type Exclusion =
   | { reason: "visited"; at: string }
   | { reason: "clue"; note?: string }
   | { reason: "closed"; openMinutes: number }
+  | { reason: "closesEarly"; closesAt: Date }
   | { reason: "zone"; metresOutside: number }
 
 /**
@@ -79,9 +102,12 @@ export type Exclusion =
  *    *did*. A bar you drank at counts, whatever the circle did afterwards.
  *  - `clue` next: being told the chicken is not there is a stronger statement
  *    than any of the geometry below it.
- *  - `closed` before `zone`, because the zone moves and will keep moving, while
- *    a bar that is shut all evening is a permanent fact and the more useful
- *    thing to be told.
+ *  - the two opening-hours reasons before `zone`, because the zone moves and
+ *    will keep moving, while a bar's hours are a permanent fact about tonight
+ *    and the more useful thing to be told.
+ *
+ * `closed` is checked before `closesEarly` so a bar that is barely open at all
+ * is described by how little it opens rather than by when it shuts.
  */
 export function exclusionOf(
   bar: Bar,
@@ -93,6 +119,14 @@ export function exclusionOf(
 
   const openMinutes = openDuringGame(bar.hours, game)
   if (openMinutes < MIN_OPEN_MINUTES) return { reason: "closed", openMinutes }
+
+  // Open for plenty of the game, but shut before the end of it. The two are
+  // separate facts and read very differently on a card, so they are separate
+  // reasons rather than one "opening hours" catch-all.
+  if (!openAtTheEnd(bar.hours, game)) {
+    const closesAt = lastClosingBetween(bar.hours, game.start, game.end)
+    if (closesAt) return { reason: "closesEarly", closesAt }
+  }
 
   // No zone announced yet means nothing is outside one.
   if (!zone) return null
@@ -127,6 +161,8 @@ export function describeExclusion(exclusion: Exclusion): string {
       return exclusion.openMinutes === 0
         ? "Lukket under hele spillet"
         : `Kun åben ${exclusion.openMinutes} min af spillet`
+    case "closesEarly":
+      return `Lukker ${formatTime(exclusion.closesAt)} — inden spillet slutter`
     case "zone":
       return `${formatMetres(exclusion.metresOutside)} uden for zonen`
   }
