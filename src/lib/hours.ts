@@ -172,6 +172,36 @@ export function nextOpeningAt(hours: HoursInput, date: Date): Date | null {
 }
 
 /**
+ * How many minutes the bar is open between `from` and `to`.
+ *
+ * Sums every open window that overlaps the range rather than asking "is it open
+ * at some instant", because the useful question is how *much* of a period a bar
+ * is available for — a place that unlocks its door twenty minutes before the
+ * range ends is technically open during it and practically no use.
+ */
+export function openMinutesBetween(
+  hours: HoursInput,
+  from: Date,
+  to: Date
+): number {
+  if (to <= from) return 0
+  // -1 catches a window that opened the day before and runs past midnight into
+  // the range; the upper bound covers every day the range itself touches.
+  const spanDays = Math.ceil(
+    (to.getTime() - from.getTime()) / (MINUTES_PER_DAY * 60_000)
+  )
+  let total = 0
+  for (let offset = -1; offset <= spanDays + 1; offset++) {
+    const win = windowStartingOn(hours, from, offset)
+    if (!win) continue
+    const start = Math.max(win.start.getTime(), from.getTime())
+    const end = Math.min(win.end.getTime(), to.getTime())
+    if (end > start) total += Math.round((end - start) / 60_000)
+  }
+  return total
+}
+
+/**
  * A bar closing within this many minutes is worth flagging. Once the evening is
  * under way almost everything is open, so "open" stops carrying information and
  * only the ones about to close do.

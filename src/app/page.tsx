@@ -3,7 +3,7 @@
 import * as React from "react"
 import dynamic from "next/dynamic"
 import { cn } from "cn"
-import { ListIcon, MapIcon } from "lucide-react"
+import { CheckIcon, ListIcon, MapIcon } from "lucide-react"
 
 import { AddBarDialog } from "@/components/add-bar-dialog"
 import { BarCard } from "@/components/bar-card"
@@ -12,7 +12,8 @@ import { SyncIndicator } from "@/components/sync-indicator"
 import { Button } from "@/components/ui/button"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { useGameState } from "@/components/use-game-state"
-import { getOpenState, type OpenState } from "@/lib/hours"
+import { gameWindow, isInPlay } from "@/lib/game"
+import { formatTime, getOpenState, type OpenState } from "@/lib/hours"
 import type { Bar, Visit } from "@/lib/types"
 
 /** Leaflet reaches for `window`, so the map may only load in the browser. */
@@ -45,7 +46,14 @@ type Filter = (typeof FILTERS)[number]["id"]
 const TAB_CLASS =
   "gap-1.5 text-sm font-semibold dark:data-active:border-primary/30 dark:data-active:bg-primary/10 dark:data-active:text-primary"
 
-type Row = { bar: Bar; visit?: Visit; status: OpenState; pending: boolean }
+type Row = {
+  bar: Bar
+  visit?: Visit
+  status: OpenState
+  /** Open for enough of tonight's game to be worth walking to. */
+  inPlay: boolean
+  pending: boolean
+}
 
 type Tab = "liste" | "kort"
 
@@ -232,28 +240,40 @@ export default function Home() {
   const [filter, setFilter] = React.useState<Filter>("alle")
   const [query, setQuery] = React.useState("")
   const [tab, setTab] = React.useState<Tab>("liste")
+  const [onlyInPlay, setOnlyInPlay] = React.useState(true)
   const [headerRef, headerHeight] = useHeaderHeight()
 
   const rows = React.useMemo<Row[]>(() => {
     if (!state || !now) return []
+    const game = gameWindow(now)
     return state.bars
       .map((bar) => ({
         bar,
         visit: state.visits[bar.id],
         status: getOpenState(bar.hours, now),
+        inPlay: isInPlay(bar.hours, game),
         pending: togglingBars.has(bar.id),
       }))
       .sort(compareRows)
   }, [state, now, togglingBars])
 
+  const outOfPlay = rows.filter((row) => !row.inPlay).length
+
+  // The one filter that changes what the crawl *is* rather than what you are
+  // looking at, so everything below — including the score — is counted from it.
+  const inPlay = React.useMemo(
+    () => (onlyInPlay ? rows.filter((row) => row.inPlay) : rows),
+    [rows, onlyInPlay]
+  )
+
   // Progress is about the whole crawl, so it ignores the search.
-  const total = rows.length
-  const visited = rows.filter((r) => r.visit).length
+  const total = inPlay.length
+  const visited = inPlay.filter((r) => r.visit).length
 
   // The chips count what is left after the search — they compose, not compete.
   const searched = React.useMemo(
-    () => rows.filter((row) => barMatches(row.bar, query)),
-    [rows, query]
+    () => inPlay.filter((row) => barMatches(row.bar, query)),
+    [inPlay, query]
   )
 
   const counts: Record<Filter, number> = {
@@ -361,6 +381,13 @@ export default function Home() {
                   </button>
                 ))}
               </div>
+
+              <GameFilterToggle
+                active={onlyInPlay}
+                onToggle={() => setOnlyInPlay((v) => !v)}
+                now={now}
+                hidden={outOfPlay}
+              />
             </div>
           </header>
 
@@ -380,7 +407,11 @@ export default function Home() {
               ))}
 
               {shown.length === 0 && (
-                <EmptyState filter={filter} query={query} />
+                <EmptyState
+                  filter={filter}
+                  query={query}
+                  hiding={onlyInPlay && outOfPlay > 0}
+                />
               )}
 
               <AddBarDialog now={now} onAdd={addBar} />
@@ -396,7 +427,11 @@ export default function Home() {
             style={{ height: `calc(100dvh - ${headerHeight}px)` }}
           >
             {shown.length === 0 ? (
-              <EmptyState filter={filter} query={query} />
+              <EmptyState
+                filter={filter}
+                query={query}
+                hiding={onlyInPlay && outOfPlay > 0}
+              />
             ) : (
               <BarMap rows={shown} now={now} onToggle={handleToggle} />
             )}
@@ -413,19 +448,88 @@ export default function Home() {
 }
 
 /**
+ * The bars that are shut all evening are not a search result anyone wants to
+ * scroll past, but they are also not wrong — so this hides them rather than the
+ * data doing it, and says how many it is hiding so nobody wonders where a bar
+ * they know went. Built as a button with `aria-pressed` like the chips above it
+ * rather than a checkbox in a label: one element, one tap target, and no
+ * label-forwarding to double-fire the toggle.
+ */
+function GameFilterToggle({
+  active,
+  onToggle,
+  now,
+  hidden,
+}: {
+  active: boolean
+  onToggle: () => void
+  now: Date
+  hidden: number
+}) {
+  const game = gameWindow(now)
+  const range = `${formatTime(game.start)}–${formatTime(game.end)}`
+
+  return (
+    <button
+      type="button"
+      onClick={onToggle}
+      aria-pressed={active}
+      className={cn(
+        "flex w-full items-center gap-2.5 rounded-xl border px-3 py-2 text-left transition-colors active:scale-[0.99] motion-reduce:active:scale-100",
+        active ? "border-primary/40 bg-primary/10" : "border-border bg-muted/40"
+      )}
+    >
+      <span
+        aria-hidden
+        className={cn(
+          "flex size-5 shrink-0 items-center justify-center rounded-md border-2 transition-colors",
+          active
+            ? "border-primary bg-primary text-primary-foreground"
+            : "border-border"
+        )}
+      >
+        {active && <CheckIcon className="size-3.5" strokeWidth={3} />}
+      </span>
+
+      <span className="min-w-0 flex-1 text-xs leading-tight">
+        <span
+          className={cn(
+            "block font-semibold",
+            active ? "text-primary" : "text-foreground/80"
+          )}
+        >
+          Kun barer der er åbne under spillet
+        </span>
+        <span className="block text-muted-foreground">
+          {range}
+          {hidden > 0 &&
+            (active ? ` · ${hidden} skjult` : ` · ${hidden} kan ikke nås`)}
+        </span>
+      </span>
+    </button>
+  )
+}
+
+/**
  * Every empty screen gets a face and a second line: the first says what happened,
  * the second is what a teammate would have said out loud.
  */
 function emptyMessage(
   filter: Filter,
-  query: string
+  query: string,
+  hiding: boolean
 ): { icon: string; title: string; hint: string } {
   const trimmed = query.trim()
   if (trimmed)
     return {
       icon: "🔍",
       title: `Ingen barer matcher "${trimmed}".`,
-      hint: "Prøv en anden stavemåde — eller søg på adressen.",
+      // A bar hidden by the game filter looks exactly like a bar that was never
+      // in the list, so say which it might be before anyone starts doubting the
+      // data at half past three.
+      hint: hiding
+        ? "Prøv en anden stavemåde — eller slå filteret fra, hvis baren har lukket i aften."
+        : "Prøv en anden stavemåde — eller søg på adressen.",
     }
   if (filter === "besoegt")
     return {
@@ -446,8 +550,17 @@ function emptyMessage(
   }
 }
 
-function EmptyState({ filter, query }: { filter: Filter; query: string }) {
-  const { icon, title, hint } = emptyMessage(filter, query)
+function EmptyState({
+  filter,
+  query,
+  hiding,
+}: {
+  filter: Filter
+  query: string
+  /** The game filter is on and is actually holding something back. */
+  hiding: boolean
+}) {
+  const { icon, title, hint } = emptyMessage(filter, query, hiding)
 
   return (
     <div className="flex flex-col items-center gap-1.5 px-6 py-12 text-center">
