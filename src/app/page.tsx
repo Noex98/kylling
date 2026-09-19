@@ -479,7 +479,7 @@ export default function Home() {
  * hidden: what closes the circle next, and when.
  */
 function playStatusLine(now: Date, game: GameWindow, zone: Zone): string {
-  if (now < game.start) return `Spillet starter ${formatTime(game.start)}`
+  if (now < game.start) return `Starter ${formatTime(game.start)}`
   if (now >= game.end) return "Spillet er slut"
   const stage = `Zone ${zone.index}/${zone.count}`
   return zone.shrinksAt
@@ -497,6 +497,11 @@ function playStatusLine(now: Date, game: GameWindow, zone: Zone): string {
  * checkbox in a label: one element, one tap target, and no label-forwarding to
  * double-fire the toggle. The visible line stays short enough for a phone; the
  * breakdown of *why* things are out lives in the label, where it costs nothing.
+ *
+ * Deliberately the shortest control in the header. It is set once and left
+ * alone, so it has no business being as tall as the things you actually work —
+ * and every pixel it gives back here is a pixel the map gets, since the map is
+ * sized from whatever is left below the header.
  */
 function GameFilterToggle({
   active,
@@ -532,35 +537,42 @@ function GameFilterToggle({
           : `Kun barer der er i spil — ${why}`
       }
       className={cn(
-        "flex w-full items-center gap-2.5 rounded-xl border px-3 py-2 text-left transition-colors active:scale-[0.99] motion-reduce:active:scale-100",
+        // One line, and the `after` pseudo element puts a thumb-sized hit area
+        // back around a 30px box — the same trick the checkbox primitive uses,
+        // so shrinking this costs nothing to tap and nothing to the layout.
+        "relative flex w-full items-center gap-2 rounded-lg border px-2.5 py-1.5 text-xs transition-colors",
+        "after:absolute after:inset-x-0 after:-inset-y-2",
         active ? "border-primary/40 bg-primary/10" : "border-border bg-muted/40"
       )}
     >
       <span
         aria-hidden
         className={cn(
-          "flex size-5 shrink-0 items-center justify-center rounded-md border-2 transition-colors",
+          "flex size-4 shrink-0 items-center justify-center rounded-[4px] border transition-colors",
           active
             ? "border-primary bg-primary text-primary-foreground"
             : "border-border"
         )}
       >
-        {active && <CheckIcon className="size-3.5" strokeWidth={3} />}
+        {active && <CheckIcon className="size-3" strokeWidth={3.5} />}
       </span>
 
-      <span aria-hidden className="min-w-0 flex-1 text-xs leading-tight">
-        <span
-          className={cn(
-            "block font-semibold",
-            active ? "text-primary" : "text-foreground/80"
-          )}
-        >
-          Kun barer der er i spil
-        </span>
-        <span className="block truncate text-muted-foreground">
-          {playStatusLine(now, game, zone)}
-          {total > 0 && ` · ${total} ude`}
-        </span>
+      <span
+        aria-hidden
+        className={cn(
+          "shrink-0 font-semibold",
+          active ? "text-primary" : "text-foreground/80"
+        )}
+      >
+        Kun i spil
+      </span>
+
+      <span
+        aria-hidden
+        className="ml-auto min-w-0 truncate text-muted-foreground"
+      >
+        {playStatusLine(now, game, zone)}
+        {total > 0 && ` · ${total} ude`}
       </span>
     </button>
   )
