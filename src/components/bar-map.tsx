@@ -1,13 +1,23 @@
 "use client"
 
 import * as React from "react"
-import { divIcon, type DivIcon } from "leaflet"
-import { CheckIcon, LoaderCircleIcon, NavigationIcon } from "lucide-react"
-import { MapContainer, Marker, Popup, TileLayer } from "react-leaflet"
+import { divIcon, type DivIcon, type Map as LeafletMap } from "leaflet"
+import {
+  CheckIcon,
+  CrosshairIcon,
+  LoaderCircleIcon,
+  LocateFixedIcon,
+  NavigationIcon,
+} from "lucide-react"
+import { Circle, MapContainer, Marker, Popup, TileLayer } from "react-leaflet"
 
 import "leaflet/dist/leaflet.css"
 
 import { Button } from "@/components/ui/button"
+import {
+  useGeolocation,
+  type GeolocationTracker,
+} from "@/components/use-geolocation"
 import { coords } from "@/data/coords"
 import { formatOpeningLine, getOpenState } from "@/lib/hours"
 import {
@@ -100,6 +110,41 @@ function kindOf(row: BarMapRow, now: Date): MarkerKind {
   return row.visit ? "visited" : "open"
 }
 
+/**
+ * The player is not a fourth bar, so it is not a fourth pin: a filled dot with
+ * a halo, the convention every map app uses. Purple keeps it clear of the
+ * green/blue/grey the bars already own.
+ */
+const PLAYER_COLOR = "#a855f7"
+const PLAYER_SIZE = 30
+
+/**
+ * Past a few hundred metres the accuracy circle stops being information and
+ * starts being a purple blanket over Aarhus — a laptop on wifi reports
+ * kilometres. Beyond this we keep the dot and drop the circle.
+ */
+const MAX_ACCURACY_CIRCLE_M = 3000
+
+/** Recentring below this zoom would leave the dot in a sea of nothing. */
+const PLAYER_ZOOM = 16
+
+let playerIconCache: DivIcon | null = null
+
+function playerIcon(): DivIcon {
+  if (playerIconCache) return playerIconCache
+  const dot = 14
+  playerIconCache = divIcon({
+    className: "kylling-marker",
+    html: `<span style="position:relative;display:block;width:${PLAYER_SIZE}px;height:${PLAYER_SIZE}px">
+      <span class="kylling-me-halo" style="position:absolute;inset:0;border-radius:9999px;background:${PLAYER_COLOR}"></span>
+      <span style="position:absolute;top:50%;left:50%;width:${dot}px;height:${dot}px;margin:-${dot / 2}px 0 0 -${dot / 2}px;border-radius:9999px;background:${PLAYER_COLOR};border:3px solid #ffffff;box-shadow:0 0 0 1px rgba(0,0,0,0.45),0 2px 10px rgba(0,0,0,0.7)"></span>
+    </span>`,
+    iconSize: [PLAYER_SIZE, PLAYER_SIZE],
+    iconAnchor: [PLAYER_SIZE / 2, PLAYER_SIZE / 2],
+  })
+  return playerIconCache
+}
+
 /** Dark tiles without a second tile provider: invert the OSM raster. */
 const MAP_CSS = `
 .kylling-map .leaflet-container {
@@ -137,6 +182,17 @@ const MAP_CSS = `
 }
 .kylling-map .leaflet-control-attribution a { color: #d4d4d8; }
 .kylling-map .kylling-marker { background: none; border: none; }
+.kylling-map .kylling-me-halo {
+  opacity: 0.35;
+  animation: kylling-me-pulse 2.4s ease-out infinite;
+}
+@keyframes kylling-me-pulse {
+  0% { transform: scale(0.55); opacity: 0.45; }
+  70%, 100% { transform: scale(1.4); opacity: 0; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .kylling-map .kylling-me-halo { animation: none; opacity: 0.3; }
+}
 `
 
 export function BarMap({ rows, now, onToggle }: BarMapProps) {
@@ -152,12 +208,35 @@ export function BarMap({ rows, now, onToggle }: BarMapProps) {
     return { placed, missing }
   }, [rows])
 
+  // Nothing here runs until the player taps "Find mig" — see use-geolocation.
+  const geo = useGeolocation()
+  const [map, setMap] = React.useState<LeafletMap | null>(null)
+  const centredOnce = React.useRef(false)
+
+  const centreOnPlayer = React.useCallback(() => {
+    if (!map || !geo.position) return
+    map.flyTo([geo.position.lat, geo.position.lng], PLAYER_ZOOM, {
+      duration: 0.6,
+    })
+  }, [map, geo.position])
+
+  // The first fix jumps to the player once; after that the map is theirs to
+  // pan, and only the "Centrér" button moves it again.
+  React.useEffect(() => {
+    if (!map || !geo.position || centredOnce.current) return
+    centredOnce.current = true
+    map.flyTo([geo.position.lat, geo.position.lng], PLAYER_ZOOM, {
+      duration: 0.6,
+    })
+  }, [map, geo.position])
+
   return (
     <div className="kylling-map flex h-full w-full flex-col">
       <style>{MAP_CSS}</style>
 
       <div className="relative min-h-0 flex-1">
         <MapContainer
+          ref={setMap}
           center={[AARHUS_CENTRE.lat, AARHUS_CENTRE.lng]}
           zoom={DEFAULT_ZOOM}
           scrollWheelZoom
@@ -181,7 +260,39 @@ export function BarMap({ rows, now, onToggle }: BarMapProps) {
               </Popup>
             </Marker>
           ))}
+
+          {geo.position && (
+            <>
+              {geo.position.accuracy > 0 &&
+                geo.position.accuracy <= MAX_ACCURACY_CIRCLE_M && (
+                  <Circle
+                    center={[geo.position.lat, geo.position.lng]}
+                    radius={geo.position.accuracy}
+                    interactive={false}
+                    pathOptions={{
+                      color: PLAYER_COLOR,
+                      weight: 1,
+                      opacity: 0.5,
+                      fillColor: PLAYER_COLOR,
+                      fillOpacity: 0.12,
+                    }}
+                  />
+                )}
+              {/* Non-interactive, so it can never swallow a tap meant for the
+                  bar pin underneath it. */}
+              <Marker
+                position={[geo.position.lat, geo.position.lng]}
+                icon={playerIcon()}
+                interactive={false}
+                keyboard={false}
+                zIndexOffset={1000}
+                title="Dig"
+              />
+            </>
+          )}
         </MapContainer>
+
+        <PlayerControls geo={geo} onRecentre={centreOnPlayer} />
       </div>
 
       <div className="shrink-0 space-y-1.5 border-t bg-background px-3 py-2">
@@ -199,7 +310,25 @@ export function BarMap({ rows, now, onToggle }: BarMapProps) {
               {MARKER_STYLE[kind].label}
             </li>
           ))}
+          {geo.position && (
+            <li className="flex items-center gap-1.5 text-xs text-muted-foreground">
+              <span
+                aria-hidden
+                className="inline-block size-3 shrink-0 rounded-full border border-white/50"
+                style={{ background: PLAYER_COLOR }}
+              />
+              Dig — ca. ±{Math.round(geo.position.accuracy)} m
+            </li>
+          )}
         </ul>
+
+        {/* Calm and inline: geolocation errors repeat, and a toast per repeat
+            would bury the game. */}
+        {geo.message && (
+          <p role="status" className="text-xs break-words text-muted-foreground">
+            {geo.message}
+          </p>
+        )}
 
         {missing.length > 0 && (
           <details className="text-xs text-muted-foreground">
@@ -213,6 +342,64 @@ export function BarMap({ rows, now, onToggle }: BarMapProps) {
           </details>
         )}
       </div>
+    </div>
+  )
+}
+
+/**
+ * Floats over the map, outside the Leaflet container, so Leaflet's own drag and
+ * double-tap-zoom handlers never see these taps.
+ */
+function PlayerControls({
+  geo,
+  onRecentre,
+}: {
+  geo: GeolocationTracker
+  onRecentre: () => void
+}) {
+  const locating = geo.status === "locating"
+  // "blocked" means there is nothing to retry — no API, or an insecure page.
+  // The footer explains it in Danish; a dead button would only tease.
+  const canAsk = geo.status !== "blocked"
+
+  return (
+    <div className="pointer-events-none absolute right-3 bottom-8 z-[1000] flex flex-col items-end gap-2">
+      {geo.position && (
+        <Button
+          type="button"
+          variant="secondary"
+          size="lg"
+          onClick={onRecentre}
+          className="pointer-events-auto h-11 rounded-full border border-border/70 px-4 text-sm font-semibold shadow-lg"
+        >
+          <CrosshairIcon />
+          Centrér
+        </Button>
+      )}
+
+      {/* No position yet? Then the only way the prompt ever appears is here,
+          on a deliberate tap. Never on mount. */}
+      {!geo.position && canAsk && (
+        <Button
+          type="button"
+          size="lg"
+          onClick={geo.start}
+          disabled={locating}
+          aria-busy={locating}
+          className="pointer-events-auto h-11 rounded-full px-4 text-sm font-semibold shadow-lg"
+        >
+          {locating ? (
+            <LoaderCircleIcon className="animate-spin" />
+          ) : (
+            <LocateFixedIcon />
+          )}
+          {locating
+            ? "Finder dig…"
+            : geo.status === "failed"
+              ? "Prøv igen"
+              : "Find mig"}
+        </Button>
+      )}
     </div>
   )
 }
