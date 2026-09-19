@@ -11,7 +11,14 @@ import {
   MinimizeIcon,
   NavigationIcon,
 } from "lucide-react"
-import { Circle, MapContainer, Marker, Popup, TileLayer } from "react-leaflet"
+import {
+  Circle,
+  MapContainer,
+  Marker,
+  Polygon,
+  Popup,
+  TileLayer,
+} from "react-leaflet"
 
 import "leaflet/dist/leaflet.css"
 
@@ -21,13 +28,19 @@ import {
   type GeolocationTracker,
 } from "@/components/use-geolocation"
 import { coords } from "@/data/coords"
-import { formatIn, formatOpeningLine, getOpenState } from "@/lib/hours"
+import {
+  formatIn,
+  formatOpeningLine,
+  formatTime,
+  getOpenState,
+} from "@/lib/hours"
 import {
   AARHUS_CENTRE,
   googleMapsDirectionsUrl,
   googleMapsUrl,
 } from "@/lib/maps"
 import type { Bar, Visit } from "@/lib/types"
+import type { Zone } from "@/lib/zone"
 
 /**
  * Leaflet touches `window`, so this module must only ever be loaded through
@@ -46,7 +59,91 @@ type BarMapProps = {
   rows: BarMapRow[]
   /** Server-aligned "now", so open/closed matches the list. */
   now: Date
+  /** The circle in force right now. Drawn whether or not the filter is on. */
+  zone: Zone
   onToggle: (bar: Bar, visited: boolean) => void
+}
+
+/** The colour of the closed-off area. Not a warning — a dead zone. */
+const ZONE_EDGE = "#f59e0b"
+
+/** "1,6 km" · "350 m" — a radius you can picture, not a number of metres. */
+function formatMetres(metres: number): string {
+  if (metres < 1000) return `${metres} m`
+  return `${(metres / 1000).toLocaleString("da-DK", { maximumFractionDigits: 1 })} km`
+}
+
+/**
+ * The zone drawn the way Fortnite draws it: the *outside* is what gets painted,
+ * so the ring reads as the edge of the playable world rather than as a circle
+ * someone drew on a map.
+ *
+ * A Leaflet polygon renders its second ring as a hole, so one shape covering
+ * everything minus the circle does the whole job. The ring is approximated with
+ * enough points that it stays smooth at full zoom; the equirectangular metres
+ * -> degrees conversion is plenty at 1.6 km and 56°N, where the error is
+ * centimetres.
+ */
+const ZONE_RING_POINTS = 128
+
+/** A box big enough to cover the map at any zoom, without touching the poles. */
+const WORLD_RING: [number, number][] = [
+  [-85, -180],
+  [-85, 180],
+  [85, 180],
+  [85, -180],
+]
+
+function ringAround(zone: Zone): [number, number][] {
+  const metresPerDegreeLat = 111_320
+  const metresPerDegreeLng =
+    metresPerDegreeLat * Math.cos((zone.centre.lat * Math.PI) / 180)
+  const dLat = zone.radius / metresPerDegreeLat
+  const dLng = zone.radius / metresPerDegreeLng
+
+  return Array.from({ length: ZONE_RING_POINTS }, (_, i) => {
+    const angle = (i / ZONE_RING_POINTS) * 2 * Math.PI
+    return [
+      zone.centre.lat + dLat * Math.sin(angle),
+      zone.centre.lng + dLng * Math.cos(angle),
+    ] as [number, number]
+  })
+}
+
+function ZoneOverlay({ zone }: { zone: Zone }) {
+  const ring = React.useMemo(() => ringAround(zone), [zone])
+
+  return (
+    <>
+      {/* Everything outside the circle, dimmed. `interactive={false}` matters:
+          this shape covers the whole map, and a tap on it must still reach the
+          marker underneath. */}
+      <Polygon
+        positions={[WORLD_RING, ring]}
+        interactive={false}
+        pathOptions={{
+          stroke: false,
+          fillColor: "#000000",
+          fillOpacity: 0.55,
+          className: "kylling-zone-outside",
+        }}
+      />
+      {/* The edge itself, drawn separately so it keeps a crisp line over the
+          dimmed side and the lit one. */}
+      <Circle
+        center={[zone.centre.lat, zone.centre.lng]}
+        radius={zone.radius}
+        interactive={false}
+        pathOptions={{
+          color: ZONE_EDGE,
+          weight: 2,
+          opacity: 0.85,
+          fill: false,
+          className: "kylling-zone-edge",
+        }}
+      />
+    </>
+  )
 }
 
 /** Zoomed so Aarhus C's bar streets fill a phone screen. */
@@ -237,7 +334,7 @@ const MAP_CSS = `
 .kylling-map:fullscreen { background: var(--background); }
 `
 
-export function BarMap({ rows, now, onToggle }: BarMapProps) {
+export function BarMap({ rows, now, zone, onToggle }: BarMapProps) {
   // Not every bar has coordinates — those must not vanish silently.
   const { placed, missing } = React.useMemo(() => {
     const placed: { row: BarMapRow; lat: number; lng: number }[] = []
@@ -441,6 +538,8 @@ export function BarMap({ rows, now, onToggle }: BarMapProps) {
             maxZoom={19}
           />
 
+          <ZoneOverlay zone={zone} />
+
           {placed.map(({ row, lat, lng }) => {
             const kind = kindOf(row, now)
             return (
@@ -539,6 +638,17 @@ export function BarMap({ rows, now, onToggle }: BarMapProps) {
               Dig — ca. ±{Math.round(geo.position.accuracy)} m
             </li>
           )}
+          {/* Fullscreen hides the header, so this is the only place the zone is
+              named while the map is filling the screen. */}
+          <li className="flex items-center gap-1.5 text-xs font-medium text-amber-200/90">
+            <span
+              aria-hidden
+              className="inline-block size-3 shrink-0 rounded-full border-2"
+              style={{ borderColor: ZONE_EDGE }}
+            />
+            Zone {zone.index}/{zone.count} — {formatMetres(zone.radius)}
+            {zone.shrinksAt && ` · krymper ${formatTime(zone.shrinksAt)}`}
+          </li>
         </ul>
 
         {/* Calm and inline: geolocation errors repeat, and a toast per repeat

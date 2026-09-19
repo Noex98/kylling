@@ -12,9 +12,15 @@ import { SyncIndicator } from "@/components/sync-indicator"
 import { Button } from "@/components/ui/button"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { useGameState } from "@/components/use-game-state"
-import { gameWindow, isInPlay } from "@/lib/game"
+import {
+  gameWindow,
+  outOfPlay,
+  type GameWindow,
+  type OutOfPlay,
+} from "@/lib/game"
 import { formatTime, getOpenState, type OpenState } from "@/lib/hours"
 import type { Bar, Visit } from "@/lib/types"
+import { zoneAt, type Zone } from "@/lib/zone"
 
 /** Leaflet reaches for `window`, so the map may only load in the browser. */
 const BarMap = dynamic(
@@ -50,8 +56,8 @@ type Row = {
   bar: Bar
   visit?: Visit
   status: OpenState
-  /** Open for enough of tonight's game to be worth walking to. */
-  inPlay: boolean
+  /** Why this bar cannot be part of tonight's crawl, or null if it can. */
+  out: OutOfPlay | null
   pending: boolean
 }
 
@@ -243,26 +249,35 @@ export default function Home() {
   const [onlyInPlay, setOnlyInPlay] = React.useState(true)
   const [headerRef, headerHeight] = useHeaderHeight()
 
+  const game = React.useMemo(() => (now ? gameWindow(now) : null), [now])
+  const zone = React.useMemo(
+    () => (game && now ? zoneAt(game.start, now) : null),
+    [game, now]
+  )
+
   const rows = React.useMemo<Row[]>(() => {
-    if (!state || !now) return []
-    const game = gameWindow(now)
+    if (!state || !now || !game || !zone) return []
     return state.bars
       .map((bar) => ({
         bar,
         visit: state.visits[bar.id],
         status: getOpenState(bar.hours, now),
-        inPlay: isInPlay(bar.hours, game),
+        out: outOfPlay(bar, game, zone),
         pending: togglingBars.has(bar.id),
       }))
       .sort(compareRows)
-  }, [state, now, togglingBars])
+  }, [state, now, game, zone, togglingBars])
 
-  const outOfPlay = rows.filter((row) => !row.inPlay).length
+  const excluded = {
+    closed: rows.filter((row) => row.out?.reason === "closed").length,
+    zone: rows.filter((row) => row.out?.reason === "zone").length,
+  }
+  const excludedTotal = excluded.closed + excluded.zone
 
   // The one filter that changes what the crawl *is* rather than what you are
   // looking at, so everything below — including the score — is counted from it.
   const inPlay = React.useMemo(
-    () => (onlyInPlay ? rows.filter((row) => row.inPlay) : rows),
+    () => (onlyInPlay ? rows.filter((row) => !row.out) : rows),
     [rows, onlyInPlay]
   )
 
@@ -382,12 +397,16 @@ export default function Home() {
                 ))}
               </div>
 
-              <GameFilterToggle
-                active={onlyInPlay}
-                onToggle={() => setOnlyInPlay((v) => !v)}
-                now={now}
-                hidden={outOfPlay}
-              />
+              {game && zone && (
+                <GameFilterToggle
+                  active={onlyInPlay}
+                  onToggle={() => setOnlyInPlay((v) => !v)}
+                  now={now}
+                  game={game}
+                  zone={zone}
+                  excluded={excluded}
+                />
+              )}
             </div>
           </header>
 
@@ -410,7 +429,7 @@ export default function Home() {
                 <EmptyState
                   filter={filter}
                   query={query}
-                  hiding={onlyInPlay && outOfPlay > 0}
+                  hiding={onlyInPlay && excludedTotal > 0}
                 />
               )}
 
@@ -430,10 +449,17 @@ export default function Home() {
               <EmptyState
                 filter={filter}
                 query={query}
-                hiding={onlyInPlay && outOfPlay > 0}
+                hiding={onlyInPlay && excludedTotal > 0}
               />
             ) : (
-              <BarMap rows={shown} now={now} onToggle={handleToggle} />
+              zone && (
+                <BarMap
+                  rows={shown}
+                  now={now}
+                  zone={zone}
+                  onToggle={handleToggle}
+                />
+              )
             )}
           </TabsContent>
         </Tabs>
@@ -448,32 +474,63 @@ export default function Home() {
 }
 
 /**
- * The bars that are shut all evening are not a search result anyone wants to
- * scroll past, but they are also not wrong — so this hides them rather than the
- * data doing it, and says how many it is hiding so nobody wonders where a bar
- * they know went. Built as a button with `aria-pressed` like the chips above it
- * rather than a checkbox in a label: one element, one tap target, and no
- * label-forwarding to double-fire the toggle.
+ * The status line under the toggle. It is the only place the zone is spelled
+ * out in the list view, so it says where the game is rather than only what is
+ * hidden: what closes the circle next, and when.
+ */
+function playStatusLine(now: Date, game: GameWindow, zone: Zone): string {
+  if (now < game.start) return `Spillet starter ${formatTime(game.start)}`
+  if (now >= game.end) return "Spillet er slut"
+  const stage = `Zone ${zone.index}/${zone.count}`
+  return zone.shrinksAt
+    ? `${stage} · krymper ${formatTime(zone.shrinksAt)}`
+    : `${stage} · sidste zone`
+}
+
+/**
+ * Bars that are shut all evening, or that the circle has left behind, are not
+ * something anyone wants to scroll past — but they are not wrong either, so
+ * this hides them rather than the data doing it, and says how many so nobody
+ * wonders where a bar they know went.
+ *
+ * Built as a button with `aria-pressed` like the chips above it rather than a
+ * checkbox in a label: one element, one tap target, and no label-forwarding to
+ * double-fire the toggle. The visible line stays short enough for a phone; the
+ * breakdown of *why* things are out lives in the label, where it costs nothing.
  */
 function GameFilterToggle({
   active,
   onToggle,
   now,
-  hidden,
+  game,
+  zone,
+  excluded,
 }: {
   active: boolean
   onToggle: () => void
   now: Date
-  hidden: number
+  game: GameWindow
+  zone: Zone
+  excluded: { closed: number; zone: number }
 }) {
-  const game = gameWindow(now)
-  const range = `${formatTime(game.start)}–${formatTime(game.end)}`
+  const total = excluded.closed + excluded.zone
+  const why = [
+    excluded.closed > 0 ? `${excluded.closed} har lukket` : null,
+    excluded.zone > 0 ? `${excluded.zone} uden for zonen` : null,
+  ]
+    .filter(Boolean)
+    .join(", ")
 
   return (
     <button
       type="button"
       onClick={onToggle}
       aria-pressed={active}
+      aria-label={
+        total === 0
+          ? "Kun barer der er i spil — ingen er ude lige nu"
+          : `Kun barer der er i spil — ${why}`
+      }
       className={cn(
         "flex w-full items-center gap-2.5 rounded-xl border px-3 py-2 text-left transition-colors active:scale-[0.99] motion-reduce:active:scale-100",
         active ? "border-primary/40 bg-primary/10" : "border-border bg-muted/40"
@@ -491,19 +548,18 @@ function GameFilterToggle({
         {active && <CheckIcon className="size-3.5" strokeWidth={3} />}
       </span>
 
-      <span className="min-w-0 flex-1 text-xs leading-tight">
+      <span aria-hidden className="min-w-0 flex-1 text-xs leading-tight">
         <span
           className={cn(
             "block font-semibold",
             active ? "text-primary" : "text-foreground/80"
           )}
         >
-          Kun barer der er åbne under spillet
+          Kun barer der er i spil
         </span>
-        <span className="block text-muted-foreground">
-          {range}
-          {hidden > 0 &&
-            (active ? ` · ${hidden} skjult` : ` · ${hidden} kan ikke nås`)}
+        <span className="block truncate text-muted-foreground">
+          {playStatusLine(now, game, zone)}
+          {total > 0 && ` · ${total} ude`}
         </span>
       </span>
     </button>
@@ -528,7 +584,7 @@ function emptyMessage(
       // in the list, so say which it might be before anyone starts doubting the
       // data at half past three.
       hint: hiding
-        ? "Prøv en anden stavemåde — eller slå filteret fra, hvis baren har lukket i aften."
+        ? "Prøv en anden stavemåde — eller slå filteret fra, hvis baren er ude af spil."
         : "Prøv en anden stavemåde — eller søg på adressen.",
     }
   if (filter === "besoegt")
