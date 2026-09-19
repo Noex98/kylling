@@ -7,6 +7,8 @@ import {
   CrosshairIcon,
   LoaderCircleIcon,
   LocateFixedIcon,
+  MaximizeIcon,
+  MinimizeIcon,
   NavigationIcon,
 } from "lucide-react"
 import { Circle, MapContainer, Marker, Popup, TileLayer } from "react-leaflet"
@@ -193,6 +195,13 @@ const MAP_CSS = `
 @media (prefers-reduced-motion: reduce) {
   .kylling-map .kylling-me-halo { animation: none; opacity: 0.3; }
 }
+/* Fullscreen: keep Leaflet's own controls clear of the notch and the rounded
+   corners. Only the top/side insets — the legend footer owns the bottom one. */
+.kylling-fullscreen .leaflet-top { padding-top: env(safe-area-inset-top, 0px); }
+.kylling-fullscreen .leaflet-left { padding-left: env(safe-area-inset-left, 0px); }
+.kylling-fullscreen .leaflet-right { padding-right: env(safe-area-inset-right, 0px); }
+/* Only reached where the Fullscreen API actually works; it paints white. */
+.kylling-map:fullscreen { background: var(--background); }
 `
 
 export function BarMap({ rows, now, onToggle }: BarMapProps) {
@@ -230,8 +239,159 @@ export function BarMap({ rows, now, onToggle }: BarMapProps) {
     })
   }, [map, geo.position])
 
+  /**
+   * Fullscreen is a CSS overlay, not the Fullscreen API. `requestFullscreen`
+   * on an arbitrary element does nothing at all on iOS Safari — it is simply
+   * not there — and tonight the whole group is on phones. The overlay is what
+   * does the work; the native call further down is a bonus on Android/desktop.
+   */
+  const [fullscreen, setFullscreen] = React.useState(false)
+  const rootRef = React.useRef<HTMLDivElement | null>(null)
+  /** Did we push the back-button entry? Only then may we pop it. */
+  const pushedHistory = React.useRef(false)
+
+  const exitFullscreen = React.useCallback((popHistory = true) => {
+    setFullscreen(false)
+    if (
+      typeof document !== "undefined" &&
+      document.fullscreenElement &&
+      typeof document.exitFullscreen === "function"
+    ) {
+      document.exitFullscreen().catch(() => {})
+    }
+    if (popHistory && pushedHistory.current) {
+      pushedHistory.current = false
+      try {
+        window.history.back()
+      } catch {
+        // A blocked history is not a reason to stay stuck in fullscreen.
+      }
+    }
+  }, [])
+
+  const enterFullscreen = React.useCallback(() => {
+    setFullscreen(true)
+    // One history entry, so Android's back gesture leaves the map instead of
+    // leaving the game. Same URL, so nothing navigates.
+    try {
+      window.history.pushState({ kyllingFullscreen: true }, "")
+      pushedHistory.current = true
+    } catch {
+      pushedHistory.current = false
+    }
+    const el = rootRef.current
+    if (el && typeof el.requestFullscreen === "function") {
+      el.requestFullscreen().catch(() => {})
+    }
+  }, [])
+
+  const toggleFullscreen = React.useCallback(() => {
+    if (fullscreen) exitFullscreen()
+    else enterFullscreen()
+  }, [fullscreen, exitFullscreen, enterFullscreen])
+
+  /**
+   * Leaflet caches the container size and paints grey where it thinks there is
+   * nothing. Entering and leaving the overlay changes that size, so tell it —
+   * after the browser has laid the new box out, not before.
+   */
+  React.useEffect(() => {
+    if (!map) return
+    let inner = 0
+    const outer = requestAnimationFrame(() => {
+      inner = requestAnimationFrame(() => map.invalidateSize())
+    })
+    // Belt and braces for mobile Safari, which resizes its chrome afterwards.
+    const settle = window.setTimeout(() => map.invalidateSize(), 300)
+    return () => {
+      cancelAnimationFrame(outer)
+      cancelAnimationFrame(inner)
+      window.clearTimeout(settle)
+    }
+  }, [map, fullscreen])
+
+  // Rotation and the parent's height measurement move the box too.
+  React.useEffect(() => {
+    if (!map) return
+    const onResize = () => map.invalidateSize()
+    window.addEventListener("resize", onResize)
+    window.addEventListener("orientationchange", onResize)
+    const el = rootRef.current
+    const observer =
+      el && typeof ResizeObserver !== "undefined"
+        ? new ResizeObserver(onResize)
+        : null
+    if (el && observer) observer.observe(el)
+    return () => {
+      window.removeEventListener("resize", onResize)
+      window.removeEventListener("orientationchange", onResize)
+      observer?.disconnect()
+    }
+  }, [map])
+
+  // Escape leaves fullscreen — but an open popup gets the first press. Capture
+  // phase, so we see the key before Leaflet closes the popup itself.
+  React.useEffect(() => {
+    if (!fullscreen) return
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== "Escape") return
+      if (rootRef.current?.querySelector(".leaflet-popup")) {
+        map?.closePopup()
+        return
+      }
+      exitFullscreen()
+    }
+    window.addEventListener("keydown", onKeyDown, true)
+    return () => window.removeEventListener("keydown", onKeyDown, true)
+  }, [fullscreen, map, exitFullscreen])
+
+  // The back press already consumed the history entry, so do not pop it again.
+  React.useEffect(() => {
+    if (!fullscreen) return
+    const onPopState = () => {
+      pushedHistory.current = false
+      exitFullscreen(false)
+    }
+    window.addEventListener("popstate", onPopState)
+    return () => window.removeEventListener("popstate", onPopState)
+  }, [fullscreen, exitFullscreen])
+
+  // Where native fullscreen did engage, the browser's own exit (desktop Esc,
+  // the Android shade) must take the overlay with it.
+  React.useEffect(() => {
+    if (!fullscreen) return
+    const onChange = () => {
+      if (!document.fullscreenElement) exitFullscreen()
+    }
+    document.addEventListener("fullscreenchange", onChange)
+    return () => document.removeEventListener("fullscreenchange", onChange)
+  }, [fullscreen, exitFullscreen])
+
+  // Nothing behind the overlay should scroll or rubber-band under it.
+  React.useEffect(() => {
+    if (!fullscreen) return
+    const { body } = document
+    const overflow = body.style.overflow
+    const overscroll = body.style.overscrollBehavior
+    body.style.overflow = "hidden"
+    body.style.overscrollBehavior = "none"
+    return () => {
+      body.style.overflow = overflow
+      body.style.overscrollBehavior = overscroll
+    }
+  }, [fullscreen])
+
   return (
-    <div className="kylling-map flex h-full w-full flex-col">
+    <div
+      ref={rootRef}
+      // 100dvh, never 100vh: on mobile Safari and Chrome 100vh is taller than
+      // what you can see, and the legend would sit under the browser chrome.
+      className={
+        fullscreen
+          ? "kylling-map kylling-fullscreen fixed inset-0 z-50 flex h-dvh w-full flex-col overscroll-none bg-background"
+          : "kylling-map flex h-full w-full flex-col"
+      }
+    >
       <style>{MAP_CSS}</style>
 
       <div className="relative min-h-0 flex-1">
@@ -292,10 +452,29 @@ export function BarMap({ rows, now, onToggle }: BarMapProps) {
           )}
         </MapContainer>
 
-        <PlayerControls geo={geo} onRecentre={centreOnPlayer} />
+        <PlayerControls
+          geo={geo}
+          onRecentre={centreOnPlayer}
+          fullscreen={fullscreen}
+          onToggleFullscreen={toggleFullscreen}
+        />
       </div>
 
-      <div className="shrink-0 space-y-1.5 border-t bg-background px-3 py-2">
+      <div
+        className="shrink-0 space-y-1.5 border-t bg-background px-3 py-2"
+        // Fullscreen puts this strip on the very edge of the screen, so it has
+        // to clear the home indicator and the landscape corners itself.
+        style={
+          fullscreen
+            ? {
+                paddingBottom: "calc(0.5rem + env(safe-area-inset-bottom, 0px))",
+                paddingLeft: "calc(0.75rem + env(safe-area-inset-left, 0px))",
+                paddingRight:
+                  "calc(0.75rem + env(safe-area-inset-right, 0px))",
+              }
+            : undefined
+        }
+      >
         <ul className="flex flex-wrap items-center gap-x-3 gap-y-1">
           {LEGEND.map((kind) => (
             <li
@@ -353,9 +532,13 @@ export function BarMap({ rows, now, onToggle }: BarMapProps) {
 function PlayerControls({
   geo,
   onRecentre,
+  fullscreen,
+  onToggleFullscreen,
 }: {
   geo: GeolocationTracker
   onRecentre: () => void
+  fullscreen: boolean
+  onToggleFullscreen: () => void
 }) {
   const locating = geo.status === "locating"
   // "blocked" means there is nothing to retry — no API, or an insecure page.
@@ -363,7 +546,31 @@ function PlayerControls({
   const canAsk = geo.status !== "blocked"
 
   return (
-    <div className="pointer-events-none absolute right-3 bottom-8 z-[1000] flex flex-col items-end gap-2">
+    <div
+      className="pointer-events-none absolute right-3 bottom-8 z-[1000] flex flex-col items-end gap-2"
+      style={
+        fullscreen
+          ? { paddingRight: "env(safe-area-inset-right, 0px)" }
+          : undefined
+      }
+    >
+      <Button
+        type="button"
+        variant="secondary"
+        size="icon-lg"
+        onClick={onToggleFullscreen}
+        aria-pressed={fullscreen}
+        aria-label={fullscreen ? "Luk fuldskærm" : "Vis kort i fuldskærm"}
+        title={fullscreen ? "Luk fuldskærm" : "Fuldskærm"}
+        className="pointer-events-auto size-11 rounded-full border border-border/70 shadow-lg"
+      >
+        {fullscreen ? (
+          <MinimizeIcon className="size-5" />
+        ) : (
+          <MaximizeIcon className="size-5" />
+        )}
+      </Button>
+
       {geo.position && (
         <Button
           type="button"
