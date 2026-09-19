@@ -36,6 +36,15 @@ const FILTERS = [
 
 type Filter = (typeof FILTERS)[number]["id"]
 
+/**
+ * The view switch is the quieter of the two selectors on screen, so the active
+ * tab is lit rather than filled: accent text on a wash of the accent. The `dark:`
+ * prefixes are deliberate — they are what the shadcn defaults use, so these
+ * replace them instead of racing them.
+ */
+const TAB_CLASS =
+  "gap-1.5 text-sm font-semibold dark:data-active:border-primary/30 dark:data-active:bg-primary/10 dark:data-active:text-primary"
+
 type Row = { bar: Bar; visit?: Visit; status: OpenState; pending: boolean }
 
 type Tab = "liste" | "kort"
@@ -73,12 +82,20 @@ const LOADER_CSS = `
   0%, 100% { transform: translateY(0) scale(1); }
   50% { transform: translateY(-7%) scale(1.06); }
 }
+@keyframes kylling-rise {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
 .kylling-loader-emoji {
   animation: kylling-bob 1.5s ease-in-out infinite;
   filter: drop-shadow(0 14px 28px rgba(0, 0, 0, 0.55));
 }
+.kylling-loader-name {
+  animation: kylling-rise 700ms 140ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
 @media (prefers-reduced-motion: reduce) {
-  .kylling-loader-emoji { animation: none; }
+  .kylling-loader-emoji,
+  .kylling-loader-name { animation: none; }
 }
 `
 
@@ -115,21 +132,34 @@ function FirstLoadOverlay({ resolved }: { resolved: boolean }) {
         if (event.propertyName === "opacity") setMounted(false)
       }}
       className={cn(
-        "fixed inset-0 z-50 flex items-center justify-center bg-background transition-opacity ease-out",
+        "fixed inset-0 z-50 flex items-center justify-center overflow-hidden bg-background transition-opacity ease-out",
         fading && "pointer-events-none opacity-0"
       )}
       style={{ transitionDuration: `${FADE_MS}ms` }}
     >
       <style>{LOADER_CSS}</style>
-      <div className="flex flex-col items-center gap-6 px-6 text-center">
+
+      {/* The lamp over the table: one pool of warm light, and nothing else. */}
+      <div
+        aria-hidden
+        className="pointer-events-none absolute top-1/2 left-1/2 size-[min(78vw,26rem)] -translate-x-1/2 -translate-y-[58%] rounded-full bg-primary/12 blur-[70px]"
+      />
+
+      <div className="relative flex flex-col items-center gap-7 px-6 text-center">
         <span
           aria-hidden
           className="kylling-loader-emoji text-[clamp(5rem,30vw,10rem)] leading-none select-none"
         >
           🐔
         </span>
-        <p className="font-heading text-lg font-bold tracking-tight text-balance">
-          {TEAM_NAME}
+        {/* Set like a crest rather than a caption — flanked, tracked out and in
+            the accent, so the team name is the thing you actually read. */}
+        <p className="kylling-loader-name flex max-w-full items-center justify-center gap-2">
+          <span aria-hidden className="h-px w-4 shrink-0 bg-primary/40" />
+          <span className="font-heading min-w-0 text-[0.68rem] font-semibold tracking-[0.22em] text-primary uppercase">
+            {TEAM_NAME}
+          </span>
+          <span aria-hidden className="h-px w-4 shrink-0 bg-primary/40" />
         </p>
       </div>
       <span className="sr-only">Henter barer…</span>
@@ -275,7 +305,9 @@ export default function Home() {
                   <h1 className="font-heading text-xl leading-tight font-bold tracking-tight">
                     Kylling 🐔
                   </h1>
-                  <p className="truncate text-xs text-muted-foreground">
+                  {/* Same crest treatment as the front door, so the header
+                      reads as the same app rather than a caption under it. */}
+                  <p className="truncate text-[0.68rem] font-semibold tracking-[0.18em] text-primary/90 uppercase">
                     {TEAM_NAME}
                   </p>
                 </div>
@@ -290,18 +322,12 @@ export default function Home() {
                 resultCount={shown.length}
               />
 
-              <TabsList className="grid h-11! w-full grid-cols-2">
-                <TabsTrigger
-                  value="liste"
-                  className="gap-1.5 text-sm font-semibold"
-                >
+              <TabsList className="grid h-11! w-full grid-cols-2 bg-muted/50">
+                <TabsTrigger value="liste" className={TAB_CLASS}>
                   <ListIcon />
                   Liste
                 </TabsTrigger>
-                <TabsTrigger
-                  value="kort"
-                  className="gap-1.5 text-sm font-semibold"
-                >
+                <TabsTrigger value="kort" className={TAB_CLASS}>
                   <MapIcon />
                   Kort
                 </TabsTrigger>
@@ -315,14 +341,23 @@ export default function Home() {
                     onClick={() => setFilter(f.id)}
                     aria-pressed={filter === f.id}
                     className={cn(
-                      "flex h-11 flex-col items-center justify-center rounded-xl border text-xs leading-tight font-medium transition-colors",
+                      "flex h-11 flex-col items-center justify-center rounded-xl border text-xs leading-tight font-semibold transition-colors active:scale-[0.98] motion-reduce:active:scale-100",
                       filter === f.id
                         ? "border-primary bg-primary text-primary-foreground"
-                        : "border-border bg-muted/40 text-muted-foreground"
+                        : "border-border bg-muted/40 text-foreground/80"
                     )}
                   >
                     <span>{f.label}</span>
-                    <span className="opacity-70">{counts[f.id]}</span>
+                    <span
+                      className={cn(
+                        "text-[0.7rem] font-medium tabular-nums",
+                        filter === f.id
+                          ? "text-primary-foreground/75"
+                          : "text-muted-foreground"
+                      )}
+                    >
+                      {counts[f.id]}
+                    </span>
                   </button>
                 ))}
               </div>
@@ -345,9 +380,7 @@ export default function Home() {
               ))}
 
               {shown.length === 0 && (
-                <p className="py-10 text-center text-sm text-muted-foreground">
-                  {emptyMessage(filter, query)}
-                </p>
+                <EmptyState filter={filter} query={query} />
               )}
 
               <AddBarDialog now={now} onAdd={addBar} />
@@ -363,9 +396,7 @@ export default function Home() {
             style={{ height: `calc(100dvh - ${headerHeight}px)` }}
           >
             {shown.length === 0 ? (
-              <p className="py-10 text-center text-sm text-muted-foreground">
-                {emptyMessage(filter, query)}
-              </p>
+              <EmptyState filter={filter} query={query} />
             ) : (
               <BarMap rows={shown} now={now} onToggle={handleToggle} />
             )}
@@ -381,36 +412,95 @@ export default function Home() {
   )
 }
 
-function emptyMessage(filter: Filter, query: string): string {
-  if (query.trim()) return `Ingen barer matcher "${query.trim()}".`
-  if (filter === "besoegt") return "I har ikke krydset nogen barer af endnu."
-  if (filter === "mangler") return "Alle barer er besøgt. Godt gået! 🐔"
-  return "Ingen barer endnu."
+/**
+ * Every empty screen gets a face and a second line: the first says what happened,
+ * the second is what a teammate would have said out loud.
+ */
+function emptyMessage(
+  filter: Filter,
+  query: string
+): { icon: string; title: string; hint: string } {
+  const trimmed = query.trim()
+  if (trimmed)
+    return {
+      icon: "🔍",
+      title: `Ingen barer matcher "${trimmed}".`,
+      hint: "Prøv en anden stavemåde — eller søg på adressen.",
+    }
+  if (filter === "besoegt")
+    return {
+      icon: "🍺",
+      title: "I har ikke krydset nogen barer af endnu.",
+      hint: "Den første øl drikker ikke sig selv.",
+    }
+  if (filter === "mangler")
+    return {
+      icon: "🏆",
+      title: "Alle barer er besøgt. Godt gået!",
+      hint: "Der er ikke flere kyllinger at finde.",
+    }
+  return {
+    icon: "🐔",
+    title: "Ingen barer endnu.",
+    hint: "Nogen må jo lægge ud.",
+  }
 }
 
+function EmptyState({ filter, query }: { filter: Filter; query: string }) {
+  const { icon, title, hint } = emptyMessage(filter, query)
+
+  return (
+    <div className="flex flex-col items-center gap-1.5 px-6 py-12 text-center">
+      <span aria-hidden className="mb-1 text-3xl leading-none">
+        {icon}
+      </span>
+      <p className="text-sm font-medium text-balance">{title}</p>
+      <p className="text-xs text-balance text-muted-foreground">{hint}</p>
+    </div>
+  )
+}
+
+/**
+ * A scoreboard rather than a form field: the tally is the loud part, and the bar
+ * fills with the accent so it reads as a glass coming up rather than a download.
+ * No `overflow-hidden` on the track — the fill is already a pill, and clipping
+ * would eat the bit of light it throws.
+ */
 function Progress({ visited, total }: { visited: number; total: number }) {
   const pct = total === 0 ? 0 : Math.round((visited / total) * 100)
   const done = total > 0 && visited === total
 
   return (
     <div className="space-y-1.5">
-      <div className="flex items-baseline justify-between">
+      <div className="flex items-baseline justify-between gap-2">
         <p className="text-base font-semibold">
-          {visited} af {total} barer besøgt
+          <span className="font-heading text-xl tracking-tight text-primary tabular-nums">
+            {visited}
+          </span>{" "}
+          af {total} barer besøgt
         </p>
-        <p className="text-sm text-muted-foreground">{pct}%</p>
+        <p
+          className={cn(
+            "shrink-0 text-sm tabular-nums",
+            done ? "font-semibold text-primary" : "text-muted-foreground"
+          )}
+        >
+          {pct}%
+        </p>
       </div>
-      <div className="h-2.5 w-full overflow-hidden rounded-full bg-muted">
+      <div className="h-2.5 w-full rounded-full bg-muted">
         <div
           className={cn(
-            "h-full rounded-full transition-[width] duration-500",
-            done ? "bg-amber-400" : "bg-emerald-500"
+            "h-full rounded-full bg-primary transition-[width] duration-500 ease-out motion-reduce:transition-none",
+            done
+              ? "shadow-[0_0_16px_-1px_var(--primary)]"
+              : "shadow-[0_0_10px_-2px_var(--primary)]"
           )}
           style={{ width: `${pct}%` }}
         />
       </div>
       {done && (
-        <p className="text-sm font-medium text-amber-300">
+        <p className="text-sm font-medium text-primary">
           Alle barer besøgt — hjem med jer! 🐔🎉
         </p>
       )}

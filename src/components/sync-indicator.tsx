@@ -195,6 +195,11 @@ export function SyncIndicator({ className }: { className?: string }) {
       ? `Opdateret ${formatAgo(ageMs)}`
       : null
 
+  // The quiet state is a bare dot; the moment there are words, they get a
+  // surface under them so dot and sentence read as one badge rather than as
+  // loose text floating beside the title.
+  const speaking = offline !== null || age !== null
+
   return (
     <div
       className={cn(
@@ -202,6 +207,7 @@ export function SyncIndicator({ className }: { className?: string }) {
         // dot up with the title; `min-w-0` so the text truncates under pressure
         // on a narrow phone rather than pushing the header wider.
         "flex min-w-0 items-center gap-1.5 self-center text-right leading-tight",
+        speaking && "rounded-full bg-muted/60 py-1 pr-2.5 pl-2",
         className
       )}
     >
@@ -233,14 +239,17 @@ export function SyncIndicator({ className }: { className?: string }) {
         {/* Always rendered, so the live region exists before it has anything to
             say. Only the headline announces: the age line below changes once a
             minute, and a screen reader repeating it that often is a nuisance. */}
+        {/* Both lines are a notch larger than they look like they need to be:
+            this is the one thing on screen that gets read in a hurry, in the
+            dark, by someone deciding whether to trust the list. */}
         <p
           role="status"
-          className="truncate text-[11px] font-medium text-destructive"
+          className="truncate text-xs font-semibold text-destructive"
         >
           {offline}
         </p>
         {age && (
-          <p className="truncate text-[10px] text-muted-foreground">{age}</p>
+          <p className="truncate text-[11px] text-muted-foreground">{age}</p>
         )}
       </div>
     </div>

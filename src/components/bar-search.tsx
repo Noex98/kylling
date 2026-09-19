@@ -1,6 +1,7 @@
 "use client"
 
 import * as React from "react"
+import { cn } from "cn"
 import { SearchIcon, XIcon } from "lucide-react"
 
 import { Input } from "@/components/ui/input"
@@ -74,7 +75,14 @@ export function BarSearchField({
   return (
     <div className="space-y-1">
       <div className="relative">
-        <SearchIcon className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground" />
+        {/* Lit while it is doing something, so a search left running is
+            visible at a glance across a dark table. */}
+        <SearchIcon
+          className={cn(
+            "pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 transition-colors",
+            active ? "text-primary" : "text-muted-foreground"
+          )}
+        />
         <Input
           type="search"
           inputMode="search"
@@ -102,9 +110,16 @@ export function BarSearchField({
 
       {active && (
         <p aria-live="polite" className="px-1 text-xs text-muted-foreground">
-          {resultCount === 0
-            ? "Ingen barer matcher"
-            : `${resultCount} ${resultCount === 1 ? "bar" : "barer"} matcher`}
+          {resultCount === 0 ? (
+            "Ingen barer matcher"
+          ) : (
+            <>
+              <span className="font-semibold text-foreground tabular-nums">
+                {resultCount}
+              </span>{" "}
+              {resultCount === 1 ? "bar" : "barer"} matcher
+            </>
+          )}
         </p>
       )}
     </div>
