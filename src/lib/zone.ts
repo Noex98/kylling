@@ -37,6 +37,10 @@ export const ZONES: ZoneAnnouncement[] = [
   // sig det samme centrum, og den lodrette udstrækning giver samme radius som
   // den vandrette — men det er stadig en aflæsning af et billede, ±150 m.
   { centre: { lat: 56.1558, lng: 10.2065 }, radius: 620 },
+  // Zone 3, meldt ud ca. 18:28. Ind over den gamle bykerne. Målt mod to
+  // uafhængige par — Trøjborgvej/Strandvejen og Langelandsgade/Park Allé — som
+  // giver samme centrum inden for ~100 m og samme skala inden for 10%.
+  { centre: { lat: 56.1576, lng: 10.2051 }, radius: 400 },
 ]
 
 /** Every zone announced tonight, oldest first. */
